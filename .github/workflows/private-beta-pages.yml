@@ -23,8 +23,8 @@ jobs:
       github.ref == 'refs/heads/develop/0.4-multiplan' &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'push' &&
-        github.event.before == '3c968bb7b48ac4935dc648f6ce25ef5d1ce6014a' &&
-        github.event.head_commit.message == 'Deploy sync clarity and overdue logging repair'))
+        github.event.before == 'e55a5854ae070dc456e443a8553b63aabbd6c64c' &&
+        github.event.head_commit.message == 'Deploy syringe preview and Professor Lynch refresh'))
     runs-on: ubuntu-latest
     env:
       EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 3c968bb7b48ac4935dc648f6ce25ef5d1ce6014a
+          ref: e55a5854ae070dc456e443a8553b63aabbd6c64c
       - uses: actions/setup-node@v4
         with:
           node-version: 24
