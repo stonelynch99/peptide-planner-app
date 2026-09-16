@@ -99,6 +99,20 @@ test('active plan editor exposes confirmed stage removal while retaining at leas
  assert.match(activeEditor,/d\.stages\.filter\(item=>item\.id!==stage\.id\)/);
  assert.match(activeEditor,/StageCard/);
 });
+test('active plan editor shows the same live syringe calculation used by plan setup and Today',()=>{
+ assert.match(activeEditor,/import Syringe from '\.\/Syringe'/);
+ assert.match(activeEditor,/quantityFromMg\(current\?\.amountMg,current\?\.amountUnit\)/);
+ assert.match(activeEditor,/<Syringe capacityOverride=\{d\.syringeCapacityUnits\?\?null\}/);
+ assert.match(activeEditor,/result=\{calc\}/);
+});
+test('Professor Lynch uses multiple approved poses across guidance contexts',()=>{
+ const ui=fs.readFileSync('./app/src/ui.tsx','utf8'),app=fs.readFileSync('./app/App.tsx','utf8');
+ for(const asset of ['professor-lynch-avatar.webp','professor-lynch-pointing-right.webp','professor-lynch-checklist.webp','professor-lynch-thinking.webp'])assert.ok(ui.includes(asset));
+ assert.match(ui,/imageIndex=.*title/);
+ assert.match(app,/professor-lynch-pointing-right\.webp/);
+ assert.match(app,/professor-lynch-checklist\.webp/);
+ assert.match(app,/professor-lynch-thinking\.webp/);
+});
 
 test('Professor Lynch explains each active-plan maintenance section without adding plan values',()=>{
  for(const section of ['Dose & Stages','Schedule','Vial & Concentration','Syringe','Inventory','Cycle / Break','Reminders','Pause / Archive'])assert.ok(activeEditor.includes("'"+section+"'"));

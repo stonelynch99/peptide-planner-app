@@ -369,7 +369,7 @@ export default function App() {
       <Text style={styles.kicker}>WELCOME TO EZPEP PLANNER</Text>
       <Text style={styles.welcomeTitle}>A clearer place to begin.</Text>
       <Text style={styles.welcomeSub}>Tell us where you are starting. This changes the guidance you see—not your calculations or available features.</Text>
-      <View style={styles.professorWelcomeCard}><Image accessibilityLabel="Professor Lynch" source={require("./assets/professor-lynch-avatar.webp")} resizeMode="contain" style={styles.professorWelcomeAvatar}/><View style={styles.professorWelcomeBubble}><View style={styles.professorBubbleTail}/><Text style={styles.professorName}>HI, I’M PROFESSOR LYNCH</Text><Text style={styles.professorMessage}>I’m here to give you a clearer, guided way to learn the basics and organize your peptide research plans.</Text></View></View>
+      <View style={styles.professorWelcomeCard}><Image accessibilityLabel="Professor Lynch" source={require("./assets/professor-lynch-checklist.webp")} resizeMode="contain" style={styles.professorWelcomeAvatar}/><View style={styles.professorWelcomeBubble}><View style={styles.professorBubbleTail}/><Text style={styles.professorName}>HI, I’M PROFESSOR LYNCH</Text><Text style={styles.professorMessage}>I’m here to give you a clearer, guided way to learn the basics and organize your peptide research plans.</Text></View></View>
       <Text style={styles.onboardingQuestion}>How familiar are you with peptides?</Text>
       <View style={styles.choiceStack}>{([
         ["new","I’m new","Show the essentials and explain each step."],
@@ -399,7 +399,7 @@ export default function App() {
       {n:"5",title:"Start tracking",detail:"Starting the plan creates Today, reminders and inventory forecasting."}
     ];
     return <ScrollView contentContainerStyle={styles.scrollContent}>
-      <View style={styles.startHero}><View style={styles.startHeroCopy}><Text style={styles.kicker}>START HERE WITH PROFESSOR LYNCH</Text><Text style={styles.welcomeTitle}>{draft?"Continue where you left off.":"Learn. Plan. Track."}</Text><Text style={styles.welcomeSub}>{newUser?"I’ll explain the essentials as you go.":"A simple path from research to a working daily schedule."}</Text></View><View style={[styles.guideSpeechBubble,compactLayout&&styles.guideSpeechBubbleCompact]}><View style={styles.guideSpeechTail}/><Text style={styles.schoolSpeechText}>{draft?"Let’s pick up where you left off. Your saved setup is ready.":"Start wherever you feel comfortable—I’ll keep the next step clear."}</Text></View><Image accessibilityLabel="Professor Lynch guide" source={require("./assets/professor-lynch-guide.webp")} resizeMode="contain" style={[styles.professorStartGuide,compactLayout&&styles.professorStartGuideCompact]}/></View>
+      <View style={styles.startHero}><View style={styles.startHeroCopy}><Text style={styles.kicker}>START HERE WITH PROFESSOR LYNCH</Text><Text style={styles.welcomeTitle}>{draft?"Continue where you left off.":"Learn. Plan. Track."}</Text><Text style={styles.welcomeSub}>{newUser?"I’ll explain the essentials as you go.":"A simple path from research to a working daily schedule."}</Text></View><View style={[styles.guideSpeechBubble,compactLayout&&styles.guideSpeechBubbleCompact]}><View style={styles.guideSpeechTail}/><Text style={styles.schoolSpeechText}>{draft?"Let’s pick up where you left off. Your saved setup is ready.":"Start wherever you feel comfortable—I’ll keep the next step clear."}</Text></View><Image accessibilityLabel="Professor Lynch guide" source={require("./assets/professor-lynch-pointing-right.webp")} resizeMode="contain" style={[styles.professorStartGuide,compactLayout&&styles.professorStartGuideCompact]}/></View>
       <View style={styles.pathLine}/>
       {steps.map((step,index)=><View key={step.n} style={[styles.startStep,draft&&index<2&&styles.startStepQuiet,index===recommended&&styles.startStepRecommended]}><View style={styles.stepNumber}><Text style={styles.stepNumberText}>{step.n}</Text></View><View style={{flex:1}}>{index===recommended&&<Text style={styles.sourceClass}>RECOMMENDED FIRST</Text>}<Text style={styles.lessonTitle}>{step.title}</Text><Text style={styles.nextText}>{step.detail}</Text>{step.action&&<Pressable accessibilityRole="button" accessibilityLabel={step.label} onPress={step.action} style={styles.inlineAction}><Text style={styles.crossLinkText}>{step.label} →</Text></Pressable>}</View></View>)}
       <Text style={styles.onboardingSafety}>You can move between Learn and Build Plan at any time. Your navigation stays the same after setup.</Text>
@@ -418,7 +418,7 @@ export default function App() {
           <View style={styles.heroBubbleOne} /><View style={styles.heroBubbleTwo} />
           <View style={[styles.schoolHeroCopy,compactLayout&&styles.schoolHeroCopyCompact]}><Text style={styles.kicker}>PEP SCHOOL · WITH PROFESSOR LYNCH</Text><Text style={[styles.heroTitle,compactLayout&&styles.schoolHeroTitleCompact]}>A clearer place{"\n"}to begin.</Text><Text style={styles.heroSub}>Choose one learning area at a time.</Text></View>
           <View style={[styles.schoolSpeechBubble,compactLayout&&styles.schoolSpeechBubbleCompact]}><View style={styles.schoolSpeechTail}/><Text style={styles.schoolSpeechText}>Welcome! Pick a section and we’ll take it one clear step at a time.</Text></View>
-          <Image accessibilityLabel="Professor Lynch welcoming you to Pep School" source={require("./assets/professor-lynch-hero.webp")} resizeMode="contain" style={[styles.professorSchoolHero,compactLayout&&styles.professorSchoolHeroCompact]}/>
+          <Image accessibilityLabel="Professor Lynch welcoming you to Pep School" source={require("./assets/professor-lynch-thinking.webp")} resizeMode="contain" style={[styles.professorSchoolHero,compactLayout&&styles.professorSchoolHeroCompact]}/>
         </View>
 
 
@@ -631,7 +631,7 @@ export default function App() {
         <Text style={styles.heroTitle}>Peptide Research{"\n"}Made Simple</Text>
         <Text style={styles.heroSub}>Understand. Plan. Calculate. Track.</Text>
         <View style={styles.professorWelcomeCard}>
-          <Image accessibilityLabel="Professor Lynch" source={require("./assets/professor-lynch-avatar.webp")} resizeMode="contain" style={styles.professorWelcomeAvatar}/>
+          <Image accessibilityLabel="Professor Lynch" source={require("./assets/professor-lynch-checklist.webp")} resizeMode="contain" style={styles.professorWelcomeAvatar}/>
           <View style={styles.professorWelcomeBubble}><View style={styles.professorBubbleTail}/><Text style={styles.professorName}>A QUICK WORD FROM PROFESSOR LYNCH</Text><Text style={styles.professorMessage}>Choose a peptide to review its research context, then build a plan from the information you enter. I’ll help explain each step without choosing amounts or schedules for you.</Text></View>
         </View>
 
