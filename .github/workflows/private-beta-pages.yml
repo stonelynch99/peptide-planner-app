@@ -23,8 +23,8 @@ jobs:
       github.ref == 'refs/heads/develop/0.4-multiplan' &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'push' &&
-        github.event.before == '16f3fdc187657fd79f8b352a3c5a183c2cc00907' &&
-        github.event.head_commit.message == 'Deploy approved backup restore repair'))
+        github.event.before == '3c968bb7b48ac4935dc648f6ce25ef5d1ce6014a' &&
+        github.event.head_commit.message == 'Deploy sync clarity and overdue logging repair'))
     runs-on: ubuntu-latest
     env:
       EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 16f3fdc187657fd79f8b352a3c5a183c2cc00907
+          ref: 3c968bb7b48ac4935dc648f6ce25ef5d1ce6014a
       - uses: actions/setup-node@v4
         with:
           node-version: 24
