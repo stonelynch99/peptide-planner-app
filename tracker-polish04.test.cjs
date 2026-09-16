@@ -239,3 +239,10 @@ test('guided import UI provides per-peptide missing-field cards and imports only
  assert.match(app,/Platform\.OS==='web'.*executeReadyImports/);
  assert.match(tracker,/calculationUnavailable/);
 });
+
+test('Today keeps earlier unlogged doses visible and supports grouped scheduled-time completion',()=>{
+ for(const term of ['UNLOGGED EARLIER DOSES','Review and mark earlier doses','Select only doses you actually took','At scheduled times','Just now','earlier dose'])assert.match(tracker,new RegExp(term,'i'));
+ assert.match(tracker,/pastTime==='scheduled'\?new Date\(item\.event\.scheduledAt\):new Date\(\)/);
+ assert.match(tracker,/cancelEventReminders\(selectedPast/);
+ assert.match(tracker,/setUndo\(reversals\)/);
+});
