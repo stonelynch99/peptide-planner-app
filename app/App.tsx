@@ -67,6 +67,19 @@ const COLORS = {
   white: "#FFFFFF",
 };
 
+const plannerChangedAt=(store:Store)=>{
+  const values:string[]=[];
+  for(const plan of [...getActivePlans(store),...store.archives]){
+    values.push(plan.activatedAt,plan.pausedAt||'');
+    for(const revision of plan.revisions??[])values.push(revision.changedAt);
+    for(const entry of plan.inventoryLedger??[])values.push(entry.at);
+    for(const event of plan.events)values.push(event.completedAt||'',event.skippedAt||'');
+  }
+  const times=values.map(value=>Date.parse(value)).filter(Number.isFinite);
+  return times.length?new Date(Math.max(...times)).toISOString():null;
+};
+const backupDateLabel=(value:string|null)=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'Not recorded in this older backup';
+
 
 function AppButton({ label, onPress, secondary = false, disabled = false }: { label: string; onPress: () => void; secondary?: boolean; disabled?: boolean }) {
   return (
@@ -190,8 +203,9 @@ export default function App() {
     ],
   );
   const exportLocalBackup=async()=>{
-    const payload=encodePlannerStore(saved.store);
-    const filename="ezpep-planner-backup-"+new Date().toISOString().slice(0,10)+".json";
+    const exportedAt=new Date().toISOString(),plannerUpdatedAt=plannerChangedAt(saved.store);
+    const payload=JSON.stringify({kind:'ezpep-planner-backup',backupVersion:1,exportedAt,plannerUpdatedAt,store:JSON.parse(encodePlannerStore(saved.store))});
+    const filename="ezpep-planner-backup-"+exportedAt.replace(/[:.]/g,'-')+".json";
     try{
       if(Platform.OS==="web"){
         const web=globalThis as any;
@@ -207,18 +221,27 @@ export default function App() {
       Alert.alert("Backup not created","Your saved plans were not changed. Please try again.");
     }
   };
-  const [restoreCandidate,setRestoreCandidate]=useState<{store:Store;plans:number;archives:number;history:number}|null>(null);
+  const [restoreCandidate,setRestoreCandidate]=useState<{store:Store;plans:number;archives:number;history:number;fileName:string;fileSavedAt:string|null;plannerUpdatedAt:string|null}|null>(null);
+  const [restoringBackup,setRestoringBackup]=useState(false),[restoreStatus,setRestoreStatus]=useState('');
   const chooseBackupFile=()=>{
     if(Platform.OS!=='web'){Alert.alert('Restore backup','Backup-file restore is available in the private web beta. Native file selection will be added for the Android beta.');return;}
     const web=globalThis as any,input=web.document.createElement('input');
     input.type='file';input.accept='.json,application/json';
-    input.onchange=async()=>{const file=input.files?.[0];if(!file)return;try{const store=decodePlannerStore(await file.text()),all=[...getActivePlans(store),...store.archives];setRestoreCandidate({store,plans:getActivePlans(store).length,archives:store.archives.length,history:all.reduce((n,plan)=>n+plan.events.filter(event=>event.status!=='pending').length,0)});}catch(error){Alert.alert('Backup not accepted',String(error).replace(/^Error:\s*/,''));}};
+    input.onchange=async()=>{const file=input.files?.[0];if(!file)return;try{const raw=await file.text(),value=JSON.parse(raw),wrapped=value?.kind==='ezpep-planner-backup'&&value?.store;const store=decodePlannerStore(wrapped?JSON.stringify(value.store):raw),all=[...getActivePlans(store),...store.archives];setRestoreStatus('');setRestoreCandidate({store,plans:getActivePlans(store).length,archives:store.archives.length,history:all.reduce((n,plan)=>n+plan.events.filter(event=>event.status!=='pending').length,0),fileName:file.name,fileSavedAt:wrapped&&typeof value.exportedAt==='string'?value.exportedAt:(file.lastModified?new Date(file.lastModified).toISOString():null),plannerUpdatedAt:wrapped&&typeof value.plannerUpdatedAt==='string'?value.plannerUpdatedAt:plannerChangedAt(store)});}catch(error){Alert.alert('Backup not accepted',String(error).replace(/^Error:\s*/,''));}};
     input.click();
   };
   const restoreLocalBackup=async()=>{
-    if(!restoreCandidate)return;
-    try{await AsyncStorage.setItem('peptide-planner:pre-restore:'+new Date().toISOString(),encodePlannerStore(saved.store));await (saved.loadFailed?saved.recover(restoreCandidate.store):saved.update(()=>restoreCandidate.store));setRestoreCandidate(null);setSelectedPlanId(null);setScreen('plans');Alert.alert('Backup restored','The validated backup is now active on this device.');}
-    catch{Alert.alert('Backup not restored','Your current saved data was not replaced. Please try again.');}
+    if(!restoreCandidate||restoringBackup)return;
+    setRestoringBackup(true);setRestoreStatus('Creating a safety copy…');
+    try{
+      const keys=await AsyncStorage.getAllKeys(),old=keys.filter(key=>key.startsWith('peptide-planner:pre-restore:')&&key!=='peptide-planner:pre-restore:last-good');
+      if(old.length)await AsyncStorage.multiRemove(old);
+      await AsyncStorage.setItem('peptide-planner:pre-restore:last-good',encodePlannerStore(saved.store));
+      setRestoreStatus('Restoring the selected backup…');
+      await saved.recover(restoreCandidate.store);
+      setSelectedPlanId(null);setRestoreStatus('Backup restored successfully. The selected planner is now active on this device.');
+    }catch(error){setRestoreStatus('Backup was not restored. Your current planner is unchanged. '+String(error).replace(/^Error:\s*/,''));}
+    finally{setRestoringBackup(false);}
   };
   const [importText,setImportText]=useState('');
   const [importPreview,setImportPreview]=useState<ExternalCsvPreview|null>(null);
@@ -720,7 +743,7 @@ export default function App() {
     <View style={styles.notice}><Text style={styles.noticeText}>{saved.error}</Text></View>
     <AppButton label="Choose backup file" onPress={chooseBackupFile}/>
     <Text style={styles.smallBadge}>Your current browser data stays unchanged until a backup passes validation and you confirm the restore.</Text>
-    {restoreCandidate&&<Modal transparent animationType="fade" onRequestClose={()=>setRestoreCandidate(null)}><View style={styles.importModalShade}><View style={styles.importModalCard}><Text style={styles.sourceClass}>RESTORE PREVIEW</Text><Text style={styles.importModalTitle}>Replace the unreadable planner data?</Text><Text style={styles.nextText}>{restoreCandidate.plans} active plans · {restoreCandidate.archives} archived plans · {restoreCandidate.history} saved history entries</Text><Text style={styles.smallBadge}>The validated backup becomes active only after you confirm this replacement.</Text><AppButton label="Confirm restore backup" onPress={()=>{void restoreLocalBackup();}}/><AppButton label="Cancel restore" secondary onPress={()=>setRestoreCandidate(null)}/></View></View></Modal>}
+    {restoreCandidate&&<Modal transparent animationType="fade" onRequestClose={()=>{if(!restoringBackup)setRestoreCandidate(null);}}><View style={styles.importModalShade}><View style={styles.importModalCard}><Text style={styles.sourceClass}>{restoreStatus.startsWith('Backup restored successfully')?'RESTORE COMPLETE':'RESTORE PREVIEW'}</Text><Text style={styles.importModalTitle}>{restoreStatus.startsWith('Backup restored successfully')?'Backup restored':'Replace the unreadable planner data?'}</Text><Text style={styles.nextText}>{restoreCandidate.plans} active plans · {restoreCandidate.archives} archived plans · {restoreCandidate.history} saved history entries</Text><View style={styles.restoreDates}><Text style={styles.smallBadge}>File: {restoreCandidate.fileName}</Text><Text style={styles.smallBadge}>Backup file saved: {backupDateLabel(restoreCandidate.fileSavedAt)}</Text><Text style={styles.smallBadge}>Latest planner activity in backup: {backupDateLabel(restoreCandidate.plannerUpdatedAt)}</Text></View>{!!restoreStatus&&<Text accessibilityLiveRegion="polite" style={restoreStatus.startsWith('Backup was not')?styles.restoreError:styles.restoreGood}>{restoreStatus}</Text>}{restoreStatus.startsWith('Backup restored successfully')?<AppButton label="View restored planner" onPress={()=>{setRestoreCandidate(null);setRestoreStatus('');setScreen('plans');}}/>:<><Text style={styles.smallBadge}>The validated backup becomes active only after confirmation. A single local safety copy is retained without filling browser storage with duplicate backups.</Text><AppButton label={restoringBackup?'Restoring backup…':'Confirm restore backup'} disabled={restoringBackup} onPress={restoreLocalBackup}/><AppButton label="Cancel restore" disabled={restoringBackup} secondary onPress={()=>{setRestoreCandidate(null);setRestoreStatus('');}}/></>}</View></View></Modal>}
   </ScrollView></SafeAreaView></SafeAreaProvider>;
   if(betaAccount.state.status!=='eligible')return <SafeAreaProvider><SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled"><BetaAccountPanel account={betaAccount}/><AppButton label="Export local backup" secondary onPress={exportLocalBackup}/><Text style={styles.smallBadge}>Your local data is preserved while account access is checked. Backup recovery remains available if saved data cannot be opened.</Text></ScrollView></SafeAreaView></SafeAreaProvider>;
   return (
@@ -735,7 +758,7 @@ export default function App() {
       {currentEdit&&<View style={{paddingHorizontal:20,paddingVertical:4,backgroundColor:COLORS.paleBlue}}><Text style={styles.smallBadge}>{editing?(saved.store.activeEdit?'Editing active plan · changes apply when saved':'Viewing plan settings · a draft is saved after your first change'):'You have saved active-plan edits.'}</Text><View style={{flexDirection:'row',gap:18}}>{!editing&&saved.store.activeEdit&&<Pressable accessibilityRole="button" accessibilityLabel="Resume plan edits" onPress={()=>editPlan(saved.store.activeEdit!.planId)}><Text style={styles.back}>Resume edits</Text></Pressable>}<Pressable accessibilityRole="button" accessibilityLabel="Discard plan edits" onPress={()=>setDiscardEdits(true)}><Text style={styles.back}>{saved.store.activeEdit?'Discard edits':'Close editor'}</Text></Pressable></View></View>}
       {replacement&&<View style={{padding:16,backgroundColor:COLORS.paleBlue}}><Text style={styles.helper}>You have an unfinished {saved.store.draft?.compoundName} draft. Replace only that draft? Active plans and history will stay unchanged.</Text><AppButton label="Confirm replace draft" onPress={()=>{const next=replacement;saved.update(old=>({...old,draft:next.draft})).then(()=>{setReplacement(null);setScreen(next.target);}).catch(()=>{});}}/><AppButton label="Keep existing draft" secondary onPress={()=>setReplacement(null)}/></View>}
       {discardEdits&&<View style={{padding:16,backgroundColor:COLORS.paleBlue}}><Text style={styles.helper}>{saved.store.activeEdit?'Discard saved edits? Active plans and history will stay unchanged.':'Close the editor? You have not changed this plan.'}</Text><AppButton label={saved.store.activeEdit?'Confirm discard edits':'Close editor'} onPress={()=>discardActiveEdits().then(()=>setDiscardEdits(false))}/><AppButton label={saved.store.activeEdit?'Keep edits':'Keep editor open'} secondary onPress={()=>setDiscardEdits(false)}/></View>}
-      {restoreCandidate&&<Modal transparent animationType="fade" onRequestClose={()=>setRestoreCandidate(null)}><View style={styles.importModalShade}><View style={styles.importModalCard}><Text style={styles.sourceClass}>RESTORE PREVIEW</Text><Text style={styles.importModalTitle}>Replace this device’s planner data?</Text><Text style={styles.nextText}>{restoreCandidate.plans} active plans · {restoreCandidate.archives} archived plans · {restoreCandidate.history} saved history entries</Text><Text style={styles.smallBadge}>This replaces the current local planner data only after confirmation. A private pre-restore recovery copy of the current state is created first.</Text><AppButton label="Confirm restore backup" onPress={()=>{void restoreLocalBackup();}}/><AppButton label="Cancel restore" secondary onPress={()=>setRestoreCandidate(null)}/></View></View></Modal>}
+      {restoreCandidate&&<Modal transparent animationType="fade" onRequestClose={()=>{if(!restoringBackup)setRestoreCandidate(null);}}><View style={styles.importModalShade}><View style={styles.importModalCard}><Text style={styles.sourceClass}>{restoreStatus.startsWith('Backup restored successfully')?'RESTORE COMPLETE':'RESTORE PREVIEW'}</Text><Text style={styles.importModalTitle}>{restoreStatus.startsWith('Backup restored successfully')?'Backup restored':'Replace this device’s planner data?'}</Text><Text style={styles.nextText}>{restoreCandidate.plans} active plans · {restoreCandidate.archives} archived plans · {restoreCandidate.history} saved history entries</Text><View style={styles.restoreDates}><Text style={styles.smallBadge}>File: {restoreCandidate.fileName}</Text><Text style={styles.smallBadge}>Backup file saved: {backupDateLabel(restoreCandidate.fileSavedAt)}</Text><Text style={styles.smallBadge}>Latest planner activity in backup: {backupDateLabel(restoreCandidate.plannerUpdatedAt)}</Text><Text style={styles.smallBadge}>Latest planner activity on this device: {backupDateLabel(plannerChangedAt(saved.store))}</Text></View>{!!restoreStatus&&<Text accessibilityLiveRegion="polite" style={restoreStatus.startsWith('Backup was not')?styles.restoreError:styles.restoreGood}>{restoreStatus}</Text>}{restoreStatus.startsWith('Backup restored successfully')?<AppButton label="View restored planner" onPress={()=>{setRestoreCandidate(null);setRestoreStatus('');setScreen('plans');}}/>:<><Text style={styles.smallBadge}>{restoreCandidate.plannerUpdatedAt&&plannerChangedAt(saved.store)&&Date.parse(restoreCandidate.plannerUpdatedAt)>Date.parse(plannerChangedAt(saved.store)!)?'This backup contains the newer recorded planner activity.':'Review these dates carefully. If both copies changed, keep the one you recognize rather than relying only on a timestamp.'} A private pre-restore recovery copy is created first.</Text><AppButton label={restoringBackup?'Restoring backup…':'Confirm restore backup'} disabled={restoringBackup} onPress={restoreLocalBackup}/><AppButton label="Cancel restore" disabled={restoringBackup} secondary onPress={()=>{setRestoreCandidate(null);setRestoreStatus('');}}/></>}</View></View></Modal>}
       {cloudGuideOpen&&betaAccount.state.status==='eligible'&&<Modal transparent animationType="fade" onRequestClose={closeCloudGuide}><View style={styles.importModalShade}><ScrollView contentContainerStyle={styles.cloudGuideScroll}><CloudDataPanel guided store={saved.store} ready={saved.ready&&!saved.saving&&!saved.loadFailed&&!saved.error} userId={betaAccount.state.userId!} replaceStore={saved.recover} onCloudChanged={()=>void cloudSync.syncNow()}/><AppButton label="Done for now" secondary onPress={closeCloudGuide}/></ScrollView></View></Modal>}
       <View key={screen==='schoolDetail'?screen+selected.id:screen} style={styles.main}>
         {screen === "welcome" && renderWelcome()}
@@ -767,6 +790,9 @@ const styles = StyleSheet.create({
   importModalShade:{flex:1,backgroundColor:'rgba(9,20,49,0.55)',alignItems:'center',justifyContent:'center',padding:24},
   cloudGuideScroll:{width:'100%',maxWidth:700,paddingVertical:24},
   importModalCard:{width:'100%',maxWidth:430,padding:22,borderRadius:24,backgroundColor:'#fff'},
+  restoreDates:{marginTop:14,padding:12,gap:5,borderRadius:14,backgroundColor:COLORS.pale},
+  restoreGood:{marginTop:12,color:'#176B45',fontSize:14,lineHeight:20,fontWeight:'700'},
+  restoreError:{marginTop:12,color:'#A33A2B',fontSize:14,lineHeight:20,fontWeight:'700'},
   importModalTitle:{fontSize:27,lineHeight:33,fontWeight:'800',color:COLORS.ink,marginTop:5},
   welcomeContent:{paddingHorizontal:22,paddingTop:28,paddingBottom:40},
   welcomeBrand:{width:"100%",maxWidth:390,height:106,alignItems:"flex-start",justifyContent:"center",marginBottom:18},

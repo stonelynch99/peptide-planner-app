@@ -86,7 +86,11 @@ test('settings can export and safely restore a private local backup',()=>{
  assert.match(app,/link\.download=filename/);
  for(const term of ['Restore EZPep backup','RESTORE PREVIEW','Confirm restore backup','Cancel restore','pre-restore recovery copy','peptide-planner:pre-restore:','decodePlannerStore'])assert.match(app,new RegExp(term));
  assert.match(app,/input\.accept='\.json,application\/json'/);
- assert.match(app,/saved\.update\(\(\)=>restoreCandidate\.store\)/);
+ assert.match(app,/saved\.recover\(restoreCandidate\.store\)/);
+ assert.match(app,/Backup file saved:/);
+ assert.match(app,/Latest planner activity in backup:/);
+ assert.match(app,/peptide-planner:pre-restore:last-good/);
+ assert.match(app,/RESTORE COMPLETE/);
  assert.match(app,/Backup not accepted/);
 });
 

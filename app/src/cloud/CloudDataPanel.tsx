@@ -6,6 +6,7 @@ import {decodePlannerStore,encodePlannerStore} from '../persistence-v04';
 import {confirmMigration,reviewMigration,type MigrationReview} from './planner-migration';
 import {decideAutomaticSync,downloadReviewed,reviewSync,uploadReviewed,type AutomaticSyncBaseline,type SyncReview} from './planner-sync';
 import {eligibleUser,exportOwnAccount,readCloudPlannerSnapshot,saveCloudPlannerSnapshot,setDeletionRequest,uploadInitialPlannerCopy} from './client';
+import {saveLocalSafetyCopy} from './local-backup';
 
 export type AutomaticCloudSyncState={
  kind:'local'|'checking'|'syncing'|'upToDate'|'setup'|'needsAttention'|'retry';
@@ -43,7 +44,7 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
     set({kind:'needsAttention',label:'Sync needs attention',detail:'Both copies may contain changes. Review them before choosing which planner to keep.'});return;
    }
    set({kind:'syncing',label:'Syncing…',detail:decision==='upload'?'Saving this device’s newer changes to the cloud.':'Loading newer cloud changes on this device.'});
-   await AsyncStorage.setItem('peptide-planner:auto-sync-backup:'+new Date().toISOString(),localPayload);
+   await saveLocalSafetyCopy(localPayload,'auto-sync-backup');
    if(encodePlannerStore(current.current)!==localPayload)throw Error('Local data changed during synchronization. Try again.');
    if(decision==='upload'){
     const revision=await saveCloudPlannerSnapshot(review.localPayload,row.revision,userId);
@@ -80,7 +81,7 @@ export function CloudDataPanel({store,ready,userId,replaceStore,guided=false,onC
  const current=useRef(store);current.current=store;
  useEffect(()=>{setReview(null);setSyncReview(null);setConfirmed(false);setPendingDirection(null);setShowAdvanced(false);setMessage('');},[userId]);
  const run=async(action:()=>Promise<string>)=>{if(busy)return;setBusy(true);try{setMessage(await action());}catch(error){setMessage(error instanceof Error?error.message:'The action could not finish. Your local data is unchanged.');}finally{setBusy(false);}};
- const backup=async(payload:string,label:string)=>{const key='peptide-planner:'+label+':'+new Date().toISOString()+':'+Math.random().toString(36).slice(2);await AsyncStorage.setItem(key,payload);if(await AsyncStorage.getItem(key)!==payload)throw Error('Local safety copy could not be verified. No planner data was changed.');};
+ const backup=saveLocalSafetyCopy;
  const refreshSync=async()=>{
    const row=await readCloudPlannerSnapshot();
    setReview(null);setConfirmed(false);setPendingDirection(null);setShowAdvanced(false);
@@ -121,7 +122,7 @@ export function CloudDataPanel({store,ready,userId,replaceStore,guided=false,onC
   });setReview(null);setConfirmed(false);await refreshSync();onCloudChanged?.();return 'Your planner is ready in the cloud. Sign in on your other device with the same email. Automatic sync will begin after it matches this cloud copy.';
  }),!confirmed||!ready)}
  {button('Cancel cloud copy',()=>{setReview(null);setConfirmed(false);setMessage('Cloud copy cancelled. Nothing was uploaded.');})}</>}
- {syncReview&&<><View style={styles.summary}><Text style={styles.text}>This device: {syncReview.localPlans} saved peptide record(s)</Text><Text style={styles.text}>Cloud: {syncReview.cloudPlans} saved peptide record(s) · revision {syncReview.cloudRevision}</Text></View>
+ {syncReview&&<><View style={styles.summary}><Text style={styles.text}>This device: {syncReview.localPlans} saved peptide record(s)</Text><Text style={styles.text}>Cloud: {syncReview.cloudPlans} saved peptide record(s) · revision {syncReview.cloudRevision}</Text><Text style={styles.text}>Cloud last updated: {new Date(syncReview.cloudUpdatedAt).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}</Text></View>
  {syncReview.identical?<Text style={styles.good}>This device and the cloud copy match.</Text>:<>
  <Text style={styles.warning}>{syncReview.localPlans===0?'Your cloud planner is ready. This device does not have a planner yet.':'This device differs from the cloud copy. The normal choice is to load the cloud planner here.'}</Text>
  {!pendingDirection&&<>

@@ -2,7 +2,7 @@ import {decodeCompactPlannerStore,encodeCompactPlannerStore} from '../persistenc
 import type {Store} from '../engine';
 
 export type CloudPlannerRow={user_id:string;snapshot:unknown;schema_version:number;revision:number;updated_at:string};
-export type SyncReview={userId:string;localPayload:string;cloudPayload:string;cloudRevision:number;localPlans:number;cloudPlans:number;identical:boolean};
+export type SyncReview={userId:string;localPayload:string;cloudPayload:string;cloudRevision:number;cloudUpdatedAt:string;localPlans:number;cloudPlans:number;identical:boolean};
 
 function canonicalJson(value:unknown):string{
   if(Array.isArray(value))return '['+value.map(canonicalJson).join(',')+']';
@@ -22,7 +22,7 @@ export function reviewSync(userId:string,local:Store,row:CloudPlannerRow):SyncRe
   if(row.schema_version!==4||!Number.isSafeInteger(row.revision)||row.revision<1)throw Error('Cloud data has an unsupported version. Nothing was changed.');
   const localPayload=normalized(encodeCompactPlannerStore(local)),cloudPayload=normalized(row.snapshot);
   if(new TextEncoder().encode(localPayload).length>5000000)throw Error('This planner is too large for beta cloud storage.');
-  return {userId,localPayload,cloudPayload,cloudRevision:row.revision,localPlans:planCount(localPayload),cloudPlans:planCount(cloudPayload),identical:localPayload===cloudPayload};
+  return {userId,localPayload,cloudPayload,cloudRevision:row.revision,cloudUpdatedAt:row.updated_at,localPlans:planCount(localPayload),cloudPlans:planCount(cloudPayload),identical:localPayload===cloudPayload};
 }
 export interface SyncPort{
   userId():Promise<string>;
