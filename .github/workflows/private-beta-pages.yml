@@ -23,14 +23,16 @@ jobs:
       github.ref == 'refs/heads/develop/0.4-multiplan' &&
       (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'push' &&
-        github.event.before == '9ece97b7b2665a86c920d9c2afb9f1b5fc5a70fd' &&
-        github.event.head_commit.message == 'Deploy active editor draft repair'))
+        github.event.before == '16f3fdc187657fd79f8b352a3c5a183c2cc00907' &&
+        github.event.head_commit.message == 'Deploy approved backup restore repair'))
     runs-on: ubuntu-latest
     env:
       EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
       EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: 16f3fdc187657fd79f8b352a3c5a183c2cc00907
       - uses: actions/setup-node@v4
         with:
           node-version: 24
