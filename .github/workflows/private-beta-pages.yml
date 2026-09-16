@@ -4,7 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [develop/0.4-multiplan]
-    paths: [.github/workflows/private-beta-pages.yml]
+    paths:
+      - app/**
+      - .github/workflows/private-beta-pages.yml
 
 permissions:
   contents: read
@@ -17,25 +19,18 @@ concurrency:
 
 jobs:
   build:
-    # One activation push from the approved checkpoint; later pushes cannot deploy.
     if: >-
       github.repository == 'stonelynch99/peptide-planner-app' &&
-      github.ref == 'refs/heads/develop/0.4-multiplan' &&
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event_name == 'push' &&
-        github.event.before == 'e55a5854ae070dc456e443a8553b63aabbd6c64c' &&
-        github.event.head_commit.message == 'Deploy syringe preview and Professor Lynch refresh'))
+      github.ref == 'refs/heads/develop/0.4-multiplan'
     runs-on: ubuntu-latest
     env:
       EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
       EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: e55a5854ae070dc456e443a8553b63aabbd6c64c
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: "24"
           cache: npm
           cache-dependency-path: app/package-lock.json
       - name: Require invite-gate configuration
