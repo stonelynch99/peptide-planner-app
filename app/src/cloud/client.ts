@@ -67,6 +67,35 @@ export async function setDeletionRequest(cancel:boolean){
   if(error)throw Error('The request could not be saved. No data was deleted.');
 }
 
+
+export type BetaAdminUser = {
+  userId:string;
+  email:string;
+  createdAt:string;
+  confirmedAt:string|null;
+  lastSignInAt:string|null;
+  events:number;
+  sessions:number;
+  screenViews:number;
+  seconds:number;
+  onboardingCompleted:number;
+  planBuilderStarts:number;
+  plansStarted:number;
+  imports:number;
+  feedback:number;
+  latestActivity:string|null;
+};
+export async function betaAdminAccess(){
+  if(!client)return false;
+  const {data,error}=await (client as any).rpc('beta_admin_access');
+  return !error&&data===true;
+}
+export async function readBetaAdminDashboard():Promise<BetaAdminUser[]>{
+  const {data,error}=await (configured() as any).rpc('beta_admin_dashboard');
+  if(error)throw Error(error.code==='42501'?'This account does not have dashboard access.':'Beta dashboard could not be loaded.');
+  return Array.isArray(data)?data:[];
+}
+
 export type BetaAnalyticsEvent='session_started'|'screen_viewed'|'screen_time'|'onboarding_completed'|'plan_builder_started'|'plan_started'|'import_completed'|'feedback_submitted';
 export const BETA_ANALYTICS_CONSENT_VERSION='beta-analytics-v1';
 export async function readBetaAnalyticsConsent(){

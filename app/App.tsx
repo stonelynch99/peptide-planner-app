@@ -1,6 +1,6 @@
 import {CloudDataPanel,useAutomaticCloudSync} from './src/cloud/CloudDataPanel';
-import {BetaAccountPanel,useBetaAccount} from './src/cloud/BetaAccount';
-import {cloudConfig,submitBetaFeedback,setBetaAnalyticsConsent,trackBetaAnalytics} from './src/cloud/client';
+import {BetaAccountPanel,BetaDashboard,useBetaAccount} from './src/cloud/BetaAccount';
+import {betaAdminAccess,cloudConfig,submitBetaFeedback,setBetaAnalyticsConsent,trackBetaAnalytics} from './src/cloud/client';
 import ActivePeptideEditor from './src/ActivePeptideEditor';
 import {archivePlan} from './src/plan-actions-v04';
 import NavIcon,{navColors,type NavGlyph} from './src/NavIcon';
@@ -53,7 +53,7 @@ import {decodePlannerStore,encodePlannerStore,previewPeptideLibraryCsv,externalS
 type Experience = "new" | "familiar" | "experienced";
 type FirstGoal = "learn" | "research" | "setup" | "track";
 type OnboardingProfile = { experience: Experience; goal: FirstGoal };
-type Screen = "welcome" | "activeEditor" | "profile" | "settings" | "betaFeedback" | "betaPrivacy" | "shop" | "plans" | "planInventory" | "planDetail" | "planTracker" | "planHistory" | "school" | "schoolDetail" | "schoolMore" | "schoolSources" | "guide" | "detail" | "plan" | "calc" | "tracker" | "review" | "schedule" | "inventory" | "reminders" | "history" | "dataImport" | "more";
+type Screen = "welcome" | "activeEditor" | "profile" | "settings" | "betaFeedback" | "betaPrivacy" | "betaDashboard" | "shop" | "plans" | "planInventory" | "planDetail" | "planTracker" | "planHistory" | "school" | "schoolDetail" | "schoolMore" | "schoolSources" | "guide" | "detail" | "plan" | "calc" | "tracker" | "review" | "schedule" | "inventory" | "reminders" | "history" | "dataImport" | "more";
 
 const COLORS = {
   ink: "#0E1C4A",
@@ -147,9 +147,14 @@ export default function App() {
   const [betaConsentAt,setBetaConsentAt]=useState<string|null>(null);
   const [betaConsentChecked,setBetaConsentChecked]=useState(false);
   const [analyticsConsent,setAnalyticsConsent]=useState(false);
+  const [betaAdmin,setBetaAdmin]=useState(false);
   const analyticsSessionTracked=useRef(false);
   const trackedPlanCount=useRef<number|null>(null);
   useEffect(()=>{AsyncStorage.getItem('pepplan.beta-consent.v1').then(value=>setBetaConsentAt(value||null)).catch(()=>{});},[]);
+  useEffect(()=>{
+    if(betaAccount.state.status!=='eligible'){setBetaAdmin(false);return;}
+    betaAdminAccess().then(setBetaAdmin).catch(()=>setBetaAdmin(false));
+  },[betaAccount.state.status,betaAccount.state.userId]);
   useEffect(()=>{
     if(betaAccount.state.status!=='eligible'){setAnalyticsConsent(false);analyticsSessionTracked.current=false;return;}
     setBetaAnalyticsConsent(true).then(()=>setAnalyticsConsent(true)).catch(()=>setAnalyticsConsent(false));
@@ -614,6 +619,7 @@ export default function App() {
       {label:"Help & About",detail:"EZPep Planner 0.4, guidance and disclaimers",target:"settings"},
       {label:"Shop",detail:"Future AURAPEP connection · not connected",target:null},
     ];
+    if(betaAdmin)rows.splice(2,0,{label:"Beta Dashboard",detail:"Owner-only tester access and aggregate usage",target:"betaDashboard"});
     return <ScrollView contentContainerStyle={styles.scrollContent}>
       <Text style={[styles.kicker, { marginTop: 20 }]}>MORE</Text><Text style={styles.detailTitle}>Your EZPep Planner</Text><Text style={styles.detailMeta}>Account, reminders, preferences and support.</Text>
       <View style={styles.lessonCard}><Text style={styles.sourceClass}>USE ANOTHER DEVICE</Text><Text style={styles.lessonTitle}>Move your planner safely.</Text><Text style={styles.nextText}>Copy this device’s planner to your private cloud, then load it on a phone, tablet or computer signed in with the same invited email.</Text><AppButton label="Use EZPep on another device" onPress={()=>setCloudGuideOpen(true)}/><AppButton label="View account" secondary onPress={()=>setScreen("profile")}/></View>
@@ -769,6 +775,7 @@ export default function App() {
         {screen === "more" && renderMore()}
          {screen === "betaFeedback" && renderBetaFeedback()}
          {screen === "betaPrivacy" && renderBetaPrivacy()}
+         {screen === "betaDashboard" && betaAdmin && <BetaDashboard onBack={()=>setScreen("more")}/>}
         {screen === "dataImport" && renderDataImport()}
         {(screen==='profile'||screen==='settings')&&<ScrollView contentContainerStyle={styles.scrollContent}><Pressable accessibilityRole="button" onPress={()=>setScreen('more')}><Text style={styles.back}>‹ More</Text></Pressable><Text style={styles.kicker}>{screen==='profile'?'ACCOUNT':'PREFERENCES & DATA'}</Text><Text style={styles.detailTitle}>{screen==='profile'?'Your account':'Your settings'}</Text>{screen==='profile'?<><BetaAccountPanel account={betaAccount}/><AppButton label="Export local backup" secondary onPress={exportLocalBackup}/>{betaAccount.state.status==='eligible'&&<CloudDataPanel store={saved.store} ready={saved.ready&&!saved.saving&&!saved.loadFailed&&!saved.error} userId={betaAccount.state.userId!} replaceStore={saved.recover}/>}</>:<><View style={styles.lessonCard}><Text style={styles.lessonTitle}>Plan-specific controls</Text><Text style={styles.nextText}>Dose units, schedule, reminder lead time, syringe capacity and inventory are maintained per peptide so one plan never silently changes another.</Text><AppButton label="Open My Peptides" onPress={()=>setScreen('plans')}/></View><View style={styles.lessonCard}><Text style={styles.lessonTitle}>My data & privacy</Text><Text style={styles.nextText}>Plans, calculations, event history and inventory are saved locally first. Invited accounts can use Cloud sync in Your account to move a verified copy between devices. Keep a private backup before clearing browser or app data.</Text><AppButton label="Import data from another app" onPress={chooseImportFile}/><AppButton label="Restore EZPep backup" secondary onPress={chooseBackupFile}/><AppButton label="Export local backup" secondary onPress={exportLocalBackup}/><Text style={styles.smallBadge}>Private export files are not uploaded automatically and may contain schedules and history. Cloud sync is a separate, explicit account action with revision checks and a local safety copy.</Text></View><View style={styles.lessonCard}><Text style={styles.sourceClass}>QUICK START</Text><Text style={styles.lessonTitle}>Restart onboarding</Text><Text style={styles.nextText}>Review the welcome questions and choose a new starting path. Your saved plans, history and settings will stay exactly as they are.</Text><AppButton label="Restart Quick Start Onboarding" secondary onPress={restartOnboarding}/></View><View style={styles.lessonCard}><Text style={styles.lessonTitle}>About EZPep Planner</Text><Text style={styles.nextText}>EZPep Planner 0.4 · Learn. Plan. Track.</Text><Text style={styles.smallBadge}>Educational planning support. Evidence classes and route/formulation limits remain attached to School content.</Text></View></>}<AppButton label="Back to More" secondary onPress={()=>setScreen('more')}/></ScrollView>}
         {screen === "guide" && renderGuide()}
