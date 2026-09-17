@@ -156,10 +156,10 @@ export function materializeEvents(plan:SavedPlan,from:string,through:string):Eve
  return generated.map(e=>saved.get(e.id)??e).concat([...saved.values()].filter(e=>!generated.some(g=>g.id===e.id))).sort((a,b)=>a.scheduledAt.localeCompare(b.scheduledAt));
 }
 export function rollEventWindow(plan:SavedPlan,now=new Date()):SavedPlan{
- const today=localDate(now),through=addDays(today,UPCOMING_EVENT_WINDOW_DAYS);
+ const today=localDate(now),from=addDays(today,-UPCOMING_EVENT_WINDOW_DAYS),through=addDays(today,UPCOMING_EVENT_WINDOW_DAYS);
  const durable=plan.events.filter(e=>e.status!=='pending'||Boolean(e.snoozedUntil));
- const upcoming=materializeEvents(plan,today,through).filter(e=>e.status==='pending');
- const byId=new Map([...durable,...upcoming].map(e=>[e.id,e]));
+ const loggableWindow=materializeEvents(plan,from,through).filter(e=>e.status==='pending');
+ const byId=new Map([...durable,...loggableWindow].map(e=>[e.id,e]));
  return {...plan,events:[...byId.values()].sort((a,b)=>a.scheduledAt.localeCompare(b.scheduledAt))};
 }
 export function eventStatus(e: Event,now=new Date()): 'Completed'|'Skipped'|'Missed'|'Scheduled'|'Future' {
