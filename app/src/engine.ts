@@ -154,13 +154,18 @@ export function materializeEvents(plan:SavedPlan,from:string,through:string):Eve
  const generated=generateEvents(plan,{from,through});
  const saved=plan.events.filter(e=>e.localDate>=from&&e.localDate<=through);
  const savedById=new Map(saved.map(e=>[e.id,e])),usedSavedIds=new Set<string>();
+ const sameOccurrence=(candidate:Event,event:Event)=>candidate.status!=='pending'&&candidate.localDate===event.localDate&&candidate.amountUnit===event.amountUnit&&Math.abs(candidate.amountMg-event.amountMg)<1e-9;
  const rows=generated.map(event=>{
   const exact=savedById.get(event.id);
-  if(exact){usedSavedIds.add(exact.id);return exact;}
   const imported=saved
-   .filter(candidate=>candidate.id.startsWith('import:')&&!usedSavedIds.has(candidate.id)&&candidate.status!=='pending'&&candidate.localDate===event.localDate&&candidate.amountUnit===event.amountUnit&&Math.abs(candidate.amountMg-event.amountMg)<1e-9)
+   .filter(candidate=>candidate.id.startsWith('import:')&&!usedSavedIds.has(candidate.id)&&sameOccurrence(candidate,event))
    .sort((a,b)=>Math.abs(Date.parse(a.scheduledAt)-Date.parse(event.scheduledAt))-Math.abs(Date.parse(b.scheduledAt)-Date.parse(event.scheduledAt)))[0];
-  if(imported){usedSavedIds.add(imported.id);return imported;}
+  if(imported){
+   usedSavedIds.add(imported.id);
+   if(exact&&sameOccurrence(exact,event))usedSavedIds.add(exact.id);
+   return imported;
+  }
+  if(exact){usedSavedIds.add(exact.id);return exact;}
   return event;
  });
  return rows.concat(saved.filter(event=>!usedSavedIds.has(event.id)&&!generated.some(g=>g.id===event.id))).sort((a,b)=>a.scheduledAt.localeCompare(b.scheduledAt));

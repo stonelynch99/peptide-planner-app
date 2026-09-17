@@ -1,6 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs');
 require('./register-tests.cjs');
 const {upcomingGroup}=require('./app/src/today-sections.ts');
+const {generateEvents,materializeEvents}=require('./app/src/engine.ts');
 const {previewPeptideLibraryCsv,externalHistoryKey,externalSetups,externalSetupErrors,importReadyExternalPeptides}=require('./app/src/persistence-v04.ts');
 const tracker=fs.readFileSync('./app/src/AggregateTracker.tsx','utf8');
 const app=fs.readFileSync('./app/App.tsx','utf8');
@@ -268,4 +269,25 @@ test('overdue review is bounded to yesterday, starts empty, and supports missed 
  assert.match(tracker,/const openPast=\(\)=>\{setPastSelection\(\[\]\)/);
  assert.match(tracker,/const skipPast=\(\)=>resolvePast\('skipped'\)/);
  for(const term of ['Nothing is selected automatically','as missed','Not now','Undo last change'])assert.match(tracker,new RegExp(term,'i'));
+});
+
+
+test('imported history is authoritative over matching generated and app-saved copies',()=>{
+ const plan={version:3,id:'plan',compoundId:'ss-31',compoundName:'SS-31',origin:null,customized:true,stages:[{id:'stage',amountMg:'5',amountUnit:'mg',weeks:'1',override:null}],defaultSchedule:{kind:'daily',days:[],times:['09:00'],interval:null},breakWeeks:'0',startDate:'2026-09-06',vialMg:'10',waterMl:'2',initialVials:'',reviewed:true,reminderEnabled:false,reminderOffsetMinutes:0,activatedAt:'2026-09-06T12:00:00.000Z',inventoryTotalMg:null,timezone:'America/Vancouver',events:[]};
+ const generated=generateEvents(plan,{from:'2026-09-06',through:'2026-09-06'})[0];
+ const native={...generated,status:'completed',completedAt:'2026-09-06T16:00:00.000Z'};
+ const imported={...generated,id:'import:ss31:2026-09-06:0829',scheduledAt:'2026-09-06T15:29:00.000Z',status:'completed',completedAt:'2026-09-06T15:29:00.000Z',calculationUnavailable:true};
+ const rows=materializeEvents({...plan,events:[native,imported]},'2026-09-06','2026-09-06');
+ assert.equal(rows.length,1);
+ assert.equal(rows[0].id,imported.id);
+ assert.equal(rows[0].status,'completed');
+});
+
+test('imported completion replaces a matching generated missed occurrence',()=>{
+ const plan={id:'plan',compoundId:'tesamorelin',compoundName:'Tesamorelin',origin:null,customized:true,stages:[{id:'stage',amountMg:'1',amountUnit:'mg',weeks:'1',override:null}],defaultSchedule:{kind:'daily',days:[],times:['22:00'],interval:null},breakWeeks:'0',startDate:'2026-09-06',vialMg:'10',waterMl:'2',initialVials:'',reviewed:true,reminderEnabled:false,reminderOffsetMinutes:0,activatedAt:'2026-09-06T12:00:00.000Z',inventoryTotalMg:null,timezone:'America/Vancouver',events:[]};
+ const imported={...generateEvents(plan,{from:'2026-09-06',through:'2026-09-06'})[0],id:'import:tesa:2026-09-06',status:'completed',completedAt:'2026-09-07T05:55:00.000Z',calculationUnavailable:true};
+ const rows=materializeEvents({...plan,events:[imported]},'2026-09-06','2026-09-06');
+ assert.equal(rows.length,1);
+ assert.equal(rows[0].id,imported.id);
+ assert.equal(rows[0].status,'completed');
 });
