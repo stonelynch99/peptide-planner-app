@@ -12,3 +12,7 @@ export function archivePlan(store:Store,id:string):Store{
  const plan=getActivePlans(store).find(p=>p.id===id);if(!plan)return store;
  return withActivePlans({...store,archives:[...store.archives,plan]},getActivePlans(store).filter(p=>p.id!==id));
 }
+export function restoreArchivedPlan(store:Store,id:string):Store{
+ const plan=store.archives.find(p=>p.id===id);if(!plan)return store;
+ return withActivePlans({...store,archives:store.archives.filter(p=>p.id!==id)},[...getActivePlans(store),plan]);
+}
