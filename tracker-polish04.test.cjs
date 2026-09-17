@@ -157,9 +157,13 @@ test('active plan editing is one continuous page with stages expanded and one sa
 });
 
 
-test('My Peptides cards show timeline and activity at a glance with direct plan history',()=>{
- for(const label of ['STARTED','TIME ON PLAN','LAST ACTIVITY','NEXT','SCHEDULE','SUPPLY','PROGRESS'])assert.match(myPlans,new RegExp(label));
- assert.match(myPlans,/Week '\+week\+' · Day '/);
+test('My Peptides cards prioritize dose, vial, stock and doses covered without losing detail',()=>{
+ for(const label of ['CURRENT DOSE','VIAL','CURRENT VIAL','LAST ACTIVITY','NEXT','PLAN PROGRESS','COMPLETED','STARTED','SYRINGE','STAGE'])assert.match(myPlans,new RegExp(label));
+ assert.match(myPlans,/inventoryProjection\(plan\)/);
+ assert.match(myPlans,/scheduled .*dose.*covered/);
+ assert.match(myPlans,/accessibilityRole="progressbar"/);
+ assert.match(myPlans,/More details/);
+ assert.match(myPlans,/Add inventory/);
  assert.match(myPlans,/History for '\+plan\.compoundName/);
  assert.match(app,/setScreen\('planHistory'\)/);
  assert.match(app,/screen==='planHistory'\?'history'/);
