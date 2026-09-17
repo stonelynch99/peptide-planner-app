@@ -9,7 +9,7 @@ const planTracker=fs.readFileSync('./app/src/Tracker.tsx','utf8');
 const activeEditor=fs.readFileSync('./app/src/ActivePeptideEditor.tsx','utf8');
 const store=fs.readFileSync('./app/src/store.ts','utf8');
 const myPlans=fs.readFileSync('./app/src/MyPlans.tsx','utf8');
-test('tracker leads with operational today dashboard',()=>{assert.match(tracker,/Today at a glance/);assert.match(tracker,/need logging/);assert.match(tracker,/Up next/);});
+test('tracker leads with actionable operational today dashboard',()=>{assert.match(tracker,/Today at a glance/);assert.match(tracker,/const dueToday=todayRows\.filter/);assert.match(tracker,/const needsAttention=\[\.\.\.dueToday,\.\.\.pendingPast\]/);assert.match(tracker,/need attention/);assert.doesNotMatch(tracker,/needsLog\.length/);assert.match(tracker,/Up next/);});
 test('inventory attention stays on affected Today cards instead of pushing the timeline down',()=>{
  const eventCard=fs.readFileSync('./app/src/TodayEventCard.tsx','utf8');
  assert.match(eventCard,/Inventory needs attention/);
@@ -291,3 +291,4 @@ test('imported completion replaces a matching generated missed occurrence',()=>{
  assert.equal(rows[0].id,imported.id);
  assert.equal(rows[0].status,'completed');
 });
+
