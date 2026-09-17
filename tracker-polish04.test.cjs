@@ -254,9 +254,18 @@ test('guided import UI provides per-peptide missing-field cards and imports only
  assert.match(tracker,/calculationUnavailable/);
 });
 
-test('Today keeps earlier unlogged doses visible and supports grouped scheduled-time completion',()=>{
- for(const term of ['UNLOGGED EARLIER DOSES','Review and mark earlier doses','Select only doses you actually took','At scheduled times','Just now','earlier dose'])assert.match(tracker,new RegExp(term,'i'));
- assert.match(tracker,/pastTime==='scheduled'\?new Date\(item\.event\.scheduledAt\):new Date\(\)/);
+test('Today keeps yesterday unlogged doses visible and supports taken or missed outcomes',()=>{
+ for(const term of ['UNLOGGED EARLIER DOSES','Review and mark earlier doses','Nothing is selected automatically','At scheduled times','Just now','as missed','Not now'])assert.match(tracker,new RegExp(term,'i'));
+ assert.match(tracker,/outcome==='completed'&&pastTime==='scheduled'\?new Date\(item\.event\.scheduledAt\):new Date\(\)/);
  assert.match(tracker,/cancelEventReminders\(selectedPast/);
  assert.match(tracker,/setUndo\(reversals\)/);
+});
+
+
+test('overdue review is bounded to yesterday, starts empty, and supports missed outcomes',()=>{
+ assert.match(tracker,/const yesterday=addDays\(today,-1\)/);
+ assert.match(tracker,/x\.event\.localDate===yesterday/);
+ assert.match(tracker,/const openPast=\(\)=>\{setPastSelection\(\[\]\)/);
+ assert.match(tracker,/const skipPast=\(\)=>resolvePast\('skipped'\)/);
+ for(const term of ['Nothing is selected automatically','as missed','Not now','Undo last change'])assert.match(tracker,new RegExp(term,'i'));
 });
