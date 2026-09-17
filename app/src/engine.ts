@@ -152,8 +152,18 @@ export function activate(d: Draft,now=new Date()):SavedPlan {
 }
 export function materializeEvents(plan:SavedPlan,from:string,through:string):Event[]{
  const generated=generateEvents(plan,{from,through});
- const saved=new Map(plan.events.filter(e=>e.localDate>=from&&e.localDate<=through).map(e=>[e.id,e]));
- return generated.map(e=>saved.get(e.id)??e).concat([...saved.values()].filter(e=>!generated.some(g=>g.id===e.id))).sort((a,b)=>a.scheduledAt.localeCompare(b.scheduledAt));
+ const saved=plan.events.filter(e=>e.localDate>=from&&e.localDate<=through);
+ const savedById=new Map(saved.map(e=>[e.id,e])),usedSavedIds=new Set<string>();
+ const rows=generated.map(event=>{
+  const exact=savedById.get(event.id);
+  if(exact){usedSavedIds.add(exact.id);return exact;}
+  const imported=saved
+   .filter(candidate=>candidate.id.startsWith('import:')&&!usedSavedIds.has(candidate.id)&&candidate.status!=='pending'&&candidate.localDate===event.localDate&&candidate.amountUnit===event.amountUnit&&Math.abs(candidate.amountMg-event.amountMg)<1e-9)
+   .sort((a,b)=>Math.abs(Date.parse(a.scheduledAt)-Date.parse(event.scheduledAt))-Math.abs(Date.parse(b.scheduledAt)-Date.parse(event.scheduledAt)))[0];
+  if(imported){usedSavedIds.add(imported.id);return imported;}
+  return event;
+ });
+ return rows.concat(saved.filter(event=>!usedSavedIds.has(event.id)&&!generated.some(g=>g.id===event.id))).sort((a,b)=>a.scheduledAt.localeCompare(b.scheduledAt));
 }
 export function rollEventWindow(plan:SavedPlan,now=new Date()):SavedPlan{
  const today=localDate(now),from=addDays(today,-UPCOMING_EVENT_WINDOW_DAYS),through=addDays(today,UPCOMING_EVENT_WINDOW_DAYS);

@@ -174,3 +174,20 @@ test('remaining MT-I, 5-Amino-1MQ, NAD+ and MOTS-c references preserve route and
  const nad=section('nad-plus','mots-c');assert.match(nad,/amount:750,unit:'mg'/);assert.match(nad,/6 hours at approximately 2 mg\/min/);assert.match(nad,/transferable:false/);
  const mots=section('mots-c',null);assert.match(mots,/5 mg\/kg/);assert.match(mots,/human portion measured endogenous MOTS-c/);assert.match(mots,/transferable:false/);
 });
+
+
+test('materialized history pairs an imported completion with the nearest same-day planned dose without rewriting it',()=>{
+ const draft={id:'ss',compoundId:'ss-31',compoundName:'SS-31',origin:null,customized:true,stages:[{id:'stage',amountMg:'0.25',amountUnit:'mg',weeks:'1',override:null}],defaultSchedule:{kind:'daily',days:[],times:['09:00'],interval:null},breakWeeks:'0',startDate:'2026-09-07',vialMg:'10',waterMl:'2',initialVials:'1',reviewed:true,reminderEnabled:false,reminderOffsetMinutes:0};
+ const plan=E.activate(draft,new Date('2026-09-07T12:00:00Z'));
+ const imported={...plan.events[0],id:'import:ss31-sep7-0829',scheduledAt:'2026-09-07T08:29:00.000Z',completedAt:'2026-09-07T08:29:00.000Z',status:'completed'};
+ const rows=E.materializeEvents({...plan,events:[imported]},'2026-09-07','2026-09-07');
+ assert.equal(rows.length,1);assert.equal(rows[0].id,imported.id);assert.equal(rows[0].scheduledAt,imported.scheduledAt);
+});
+
+test('same-day reconciliation remains one-to-one for legitimate twice-daily doses',()=>{
+ const draft={id:'bpc',compoundId:'bpc-157',compoundName:'BPC-157',origin:null,customized:true,stages:[{id:'stage',amountMg:'0.25',amountUnit:'mg',weeks:'1',override:null}],defaultSchedule:{kind:'daily',days:[],times:['09:00','21:00'],interval:null},breakWeeks:'0',startDate:'2026-06-17',vialMg:'10',waterMl:'2',initialVials:'1',reviewed:true,reminderEnabled:false,reminderOffsetMinutes:0};
+ const plan=E.activate(draft,new Date('2026-06-17T12:00:00Z'));
+ const imported=plan.events.map((event,index)=>({...event,id:'import:bpc-'+index,status:'completed',completedAt:event.scheduledAt}));
+ const rows=E.materializeEvents({...plan,events:imported},'2026-06-17','2026-06-17');
+ assert.equal(rows.length,2);assert.deepEqual(rows.map(row=>row.id),['import:bpc-0','import:bpc-1']);
+});
