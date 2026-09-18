@@ -14,6 +14,8 @@ export type AutomaticCloudSyncState={
 };
 const initialAutomaticState:AutomaticCloudSyncState={kind:'local',label:'Saved on this device',detail:'Sign in to use cloud sync.'};
 const automaticBaselineKey=(userId:string)=>'pepplan.cloud-sync.baseline.v1:'+userId;
+const automaticAttemptKey=(userId:string)=>'pepplan.cloud-sync.daily-attempt.v1:'+userId;
+const sameLocalDay=(left:Date,right:Date)=>left.getFullYear()===right.getFullYear()&&left.getMonth()===right.getMonth()&&left.getDate()===right.getDate();
 function readAutomaticBaseline(raw:string|null):AutomaticSyncBaseline|null{
  if(!raw)return null;
  try{const value=JSON.parse(raw);return Number.isSafeInteger(value?.revision)&&value.revision>0&&typeof value?.payload==='string'?value:null;}catch{return null;}
@@ -27,8 +29,10 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
  current.current=store;replace.current=replaceStore;attention.current=onNeedsAttention;
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
  const set=(next:AutomaticCloudSyncState)=>{if(mounted.current)setState(next);};
- const syncNow=useCallback(async()=>{
+ const syncNow=useCallback(async(force=false)=>{
   if(!eligible||!userId||!ready||saving||busy.current)return;
+  if(!force){const attempted=await AsyncStorage.getItem(automaticAttemptKey(userId));if(attempted&&sameLocalDay(new Date(attempted),new Date()))return;}
+  await AsyncStorage.setItem(automaticAttemptKey(userId),new Date().toISOString());
   busy.current=true;set({kind:'checking',label:'Checking cloud…',detail:'Comparing this device with your private cloud copy.'});
   try{
    const localPayload=encodePlannerStore(current.current),row=await readCloudPlannerSnapshot();
@@ -68,11 +72,25 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
    set(/changed|review|account/i.test(detail)?{kind:'needsAttention',label:'Sync needs attention',detail}:{kind:'retry',label:'Sync paused',detail:'Your device copy is safe. '+detail});
   }finally{busy.current=false;}
  },[eligible,userId,ready,saving]);
- const localPayload=ready?encodePlannerStore(store):'';
- useEffect(()=>{if(!eligible||!userId||!ready||saving)return;const timer=setTimeout(()=>{void syncNow();},1800);return()=>clearTimeout(timer);},[eligible,userId,ready,saving,localPayload,syncNow]);
- useEffect(()=>{if(!eligible)return;const subscription=AppState.addEventListener('change',next=>{if(next==='active')void syncNow();});return()=>subscription.remove();},[eligible,syncNow]);
+ useEffect(()=>{
+  if(!eligible||!userId||!ready||saving)return;
+  let timer:ReturnType<typeof setTimeout>|null=null,cancelled=false;
+  const schedule=async()=>{
+   const now=new Date(),attemptedRaw=await AsyncStorage.getItem(automaticAttemptKey(userId));
+   if(cancelled)return;
+   const attempted=attemptedRaw?new Date(attemptedRaw):null;
+   if(attempted&&!Number.isNaN(attempted.getTime())&&sameLocalDay(attempted,now))return;
+   const evening=new Date(now);evening.setHours(20,0,0,0);
+   const missedPreviousDay=!attempted||now.getTime()-attempted.getTime()>=36*60*60*1000;
+   if(now>=evening||missedPreviousDay){void syncNow();return;}
+   timer=setTimeout(()=>{void syncNow();},evening.getTime()-now.getTime());
+  };
+  void schedule();
+  const subscription=AppState.addEventListener('change',next=>{if(next==='active')void schedule();});
+  return()=>{cancelled=true;if(timer)clearTimeout(timer);subscription.remove();};
+ },[eligible,userId,ready,saving,syncNow]);
  useEffect(()=>{if(!eligible)setState(initialAutomaticState);},[eligible,userId]);
- const activate=()=>state.kind==='needsAttention'||state.kind==='setup'?attention.current():void syncNow();
+ const activate=()=>state.kind==='needsAttention'||state.kind==='setup'?attention.current():void syncNow(true);
  return {state,syncNow,activate};
 }
 
