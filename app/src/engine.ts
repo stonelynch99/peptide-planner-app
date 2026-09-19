@@ -183,7 +183,7 @@ export function eventStatus(e: Event,now=new Date()): 'Completed'|'Skipped'|'Mis
 }
 export function logEvent(plan:SavedPlan,id:string,action:'completed'|'skipped'|'later',now=new Date(),minutes=15):SavedPlan {
  const event=plan.events.find(e=>e.id===id);if(!event||event.status!=='pending')return plan;
- if(action!=='later'&&new Date(event.scheduledAt).getTime()>now.getTime())throw Error('This event is still in the future.');
+ if(action!=='later'&&new Date(event.scheduledAt).getTime()>now.getTime()&&!(action==='completed'&&event.localDate===localDate(now)))throw Error('This event is still in the future.');
  return {...plan,events:plan.events.map(e=>e.id!==id?e:action==='later'?{...e,snoozedUntil:new Date(now.getTime()+minutes*60000).toISOString()}:action==='completed'?{...e,status:'completed',completedAt:now.toISOString(),snoozedUntil:undefined}:{...e,status:'skipped',skippedAt:now.toISOString(),snoozedUntil:undefined})};
 }
 export function actualProgress(plan: SavedPlan,now=new Date()) {

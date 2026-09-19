@@ -60,7 +60,7 @@ export function reconcileReminders(input:SavedPlan|SavedPlan[]|null):Promise<Rem
   const now=Date.now();const permission=await Notifications.getPermissionsAsync();
   const upcoming:DesiredReminder[]=permission.granted?enabledPlans.flatMap(p=>p.events.filter(e=>e.status==='pending').flatMap(e=>{
    const scheduled=new Date(e.scheduledAt).getTime();
-   const primary=e.snoozedUntil?new Date(e.snoozedUntil).getTime():scheduled-p.reminderOffsetMinutes*60000;
+   const primary=e.snoozedUntil?new Date(e.snoozedUntil).getTime():scheduled;
    const followUp=Math.max(primary+60*60000,scheduled+60*60000);
    return [
     {planId:p.id,eventId:e.id,compoundName:p.compoundName,at:primary,urgent:false},
