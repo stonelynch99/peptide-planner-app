@@ -1,0 +1,29 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs');
+const lab=fs.readFileSync('./app/src/MultiPlanLab.tsx','utf8');
+const model=fs.readFileSync('./app/src/multiplan-v04.ts','utf8');
+const content=fs.readFileSync('./app/src/content-v04.ts','utf8');
+const entry=fs.readFileSync('./app/AppV04.tsx','utf8');
+const basics=fs.readFileSync('./app/src/school-basics.ts','utf8');
+const basicsReview=fs.readFileSync('./app/src/SchoolBasicsReview.tsx','utf8');
+
+test('0.4 review surface exposes required multi-plan stress counts',()=>{for(const n of ['1','3','6','10'])assert.match(lab,new RegExp(`stressPlanCounts|${n}`));assert.match(model,/\[1,3,6,10\]/);});
+test('aggregate review includes plans today calendar inventory and school',()=>{for(const label of ['Plans','Today','Calendar','Inventory','School'])assert.match(lab,new RegExp(`'${label}'`));});
+test('inventory explains individual vials and optional kit conversion',()=>{assert.match(lab,/Enter individual vials, not kits/);assert.match(lab,/1 kit containing 10 vials = 10 individual vials/);assert.match(lab,/I buy by kit/);});
+test('six-plan acceptance set is represented',()=>{for(const id of ['retatrutide','ghk-cu','5-amino-1mq','ss-31','nad-plus','mots-c'])assert.match(lab,new RegExp(id));});
+test('four added library records are classified and do not invent universal schedules',()=>{for(const id of ['5-amino-1mq','ss-31','nad-plus','mots-c'])assert.match(content,new RegExp(`id:'${id}'`));assert.match(content,/Small-molecule research compound/);assert.match(content,/Endogenous cofactor \/ metabolite/);assert.equal((content.match(/referenceMode:'custom-only'/g)||[]).length,15);});
+test('customer entry uses the established app without review switches',()=>{assert.match(entry,/export \{default\} from '.\/App'/);assert.doesNotMatch(entry,/Open 0\.3\.3 core|useState|<MultiPlanLab/);});
+test('Pep School quick start teaches lyophilized material, reconstitution, diluent distinctions and U-100 concentration arithmetic',()=>{for(const phrase of ['Lyophilized means freeze-dried','Reconstitution means adding','Bacteriostatic Water for Injection','Sterile Water for Injection','10 mg in 1 mL = 10 mg/mL','1 unit = 0.01 mL','0.1 mg per U-100 unit'])assert.match(basics,new RegExp(phrase.replace(/[+]/g,'\\+')));assert.match(fs.readFileSync('./app/App.tsx','utf8'),/<QuickStart\/>/);assert.match(fs.readFileSync('./app/src/QuickStart.tsx','utf8'),/accessibilityState=\{\{expanded:open\}\}/);assert.match(basicsReview,/THE MATH AT A GLANCE/);assert.match(basicsReview,/WHY THE APP PREFILLS SETUP/);});
+
+test('active editor exposes ongoing-plan control and exits ongoing mode for stages or taper',()=>{const editor=fs.readFileSync('./app/src/ActivePeptideEditor.tsx','utf8');assert.match(editor,/accessibilityLabel=\"No planned end date\"/);assert.match(editor,/const toggleOngoing=/);assert.match(editor,/patch\(\{indefinite:false,stages\}\)/);assert.match(editor,/onPress=\{\(\)=>patch\(\{indefinite:false,stages:/);});
+test('inventory cards expose direct add and compact missing low deficit warnings',()=>{const plans=fs.readFileSync('./app/src/MyPlans.tsx','utf8');assert.match(plans,/Add inventory for /);for(const label of ['Inventory setup incomplete','Inventory exhausted','Inventory urgent','Inventory needs attention'])assert.match(plans,new RegExp(label));assert.match(plans,/supplyWarning/);});
+
+test('unreadable local data opens a non-destructive backup recovery path',()=>{const app=fs.readFileSync('./app/App.tsx','utf8'),store=fs.readFileSync('./app/src/store.ts','utf8');assert.match(app,/if\(saved\.loadFailed\)return/);assert.match(app,/Your saved planner data could not be opened/);assert.match(app,/saved\.recover\(restoreCandidate\.store\)/);assert.match(store,/const recover=async/);assert.match(store,/loadFailed\.current=false/);});
+
+test('empty peptide and inventory views lead to the first plan',()=>{const plans=fs.readFileSync('./app/src/MyPlans.tsx','utf8');assert.match(plans,/Build your first plan/);assert.match(plans,/No inventory to track yet/);assert.match(plans,/plans\.length\?'Add another plan':'Build first plan'/);});
+
+test('archived peptides can be restored without rebuilding their saved plan',()=>{const plans=fs.readFileSync('./app/src/MyPlans.tsx','utf8'),actions=fs.readFileSync('./app/src/plan-actions-v04.ts','utf8');assert.match(plans,/Restore to Active/);assert.match(plans,/Confirm restore /);assert.match(plans,/schedule, history, dosage and inventory/);assert.match(actions,/export function restoreArchivedPlan/);assert.match(actions,/archives:store\.archives\.filter/);assert.match(actions,/\[\.\.\.getActivePlans\(store\),plan\]/);});
+
+
+test('individual peptide history logs the selected active plan and can hydrate a compacted missed event',()=>{const tracker=fs.readFileSync('./app/src/Tracker.tsx','utf8');assert.match(tracker,/getActivePlans\(s\)\.find\(candidate=>candidate\.id===plan\.id\)/);assert.match(tracker,/materializeEvents\(current,e\.localDate,e\.localDate\)/);assert.match(tracker,/return replacePlan\(s,logEvent\(hydrated,e\.id,value,new Date\(\)\)\)/);assert.doesNotMatch(tracker,/s\.active\?\.id!==plan\.id\?s/);});
+
+test('reviewed research cards distinguish cited protocols from recommendations and gate transfer',()=>{const practice=fs.readFileSync('./app/src/research-practice.ts','utf8'),card=fs.readFileSync('./app/src/ResearchPracticeCard.tsx','utf8');assert.match(practice,/STARTING AMOUNT & SCHEDULE REFERENCE/);assert.match(practice,/specific population or species, purpose, route and formulation/);assert.match(practice,/not a personalized recommendation/);assert.match(practice,/does not establish safety or effectiveness/);assert.match(practice,/explicitly approved for transfer/);assert.match(card,/Use reviewed reference in Guide/);assert.match(card,/No reviewed transfer is available/);assert.doesNotMatch(practice,/COMMON RESEARCH PRACTICE/);});

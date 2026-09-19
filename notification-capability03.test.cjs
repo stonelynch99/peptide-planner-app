@@ -16,6 +16,7 @@ const fresh=mode=>{runtime=mode;loads=0;delete require.cache[require.resolve('./
 test('Expo Go never evaluates notification package, all entry points fail safely and saved plan is untouched',async()=>{
  const N=fresh('go');assert.equal(loads,0);const before=JSON.stringify(plan);
  N.listenForReminder(()=>assert.fail('unexpected callback'))();
+ assert.equal(await N.cancelEventReminders([{planId:'p1',eventId:'e1'}]),0);
  assert.equal(await N.enableReminders(),false);
  const report=await N.reconcileReminders(plan);assert.equal(report.enabled,false);assert.match(report.message,/paused in Expo Go/);
  await assert.rejects(N.testReminder(),/paused in Expo Go/);
@@ -28,4 +29,16 @@ for(const mode of ['missing','handler','methods'])test(mode+' native notificatio
  assert.equal((await N.reconcileReminders(plan)).enabled,false);
  await assert.rejects(N.testReminder());
  assert.equal(loads,1);
+});
+
+test('native reminder source exposes targeted event cancellation for early completion',()=>{
+ const fs=require('node:fs');
+ const source=fs.readFileSync('./app/src/reminders.native.ts','utf8');
+ const trackerSource=fs.readFileSync('./app/src/AggregateTracker.tsx','utf8');
+ assert.match(source,/cancelEventReminders/);
+ assert.match(source,/data\.planId/);
+ assert.match(source,/data\.eventId/);
+ assert.match(source,/cancelScheduledNotificationAsync/);
+ assert.match(trackerSource,/value==='completed'\|\|value==='skipped'/);
+ assert.match(trackerSource,/selectedGroup\.map/);
 });
