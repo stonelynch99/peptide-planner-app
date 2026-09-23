@@ -708,36 +708,46 @@ export default function App() {
 
       <View style={styles.detailHero}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.detailHeroTitle}>Understand first.{"\n"}Then build a plan.</Text>
+          <Text style={styles.detailHeroTitle}>Build your first plan</Text>
           <Text style={styles.detailHeroBody}>
-            Explore source-labelled reference plans in Pep School, or build your own plan here.
+            Choose how you want your plan to begin. Most people should start with a Basic Plan. You can change it later.
           </Text>
         </View>
         <Molecule color={selected.accent} />
       </View>
 
-      <Text style={styles.sectionTitle}>Your plan structures</Text>
-      <Text style={styles.helper}>These choices start a blank, user-created plan. To carry in a reference amount, schedule and Common Research Setup, open a source-labelled plan in Pep School and choose “Use this reference setup in Guide.”</Text>
+      {saved.store.draft?.compoundId === selected.id && (
+        <>
+          <Text style={styles.sectionTitle}>Continue where you left off</Text>
+          <AppButton label="Continue My Plan" onPress={() => setScreen("plan")} />
+        </>
+      )}
+
+      <Text style={styles.sectionTitle}>Choose a starting point</Text>
 
       {[
-        ["Staged plan", "Starts with three blank stages for amounts or timing that change over the plan.", "Use this when your research plan changes in planned steps. Each stage can have its own amount, duration and schedule, and you can edit or remove any stage."],
-        ["Steady plan", "Starts with one blank stage for the same amount and schedule throughout.", "Use this when the plan follows one repeating structure from beginning to end. You can still add stages later if the plan becomes more complex."],
-        ["Custom plan", "Starts with one blank stage; add or remove stages as you build.", "Use this when you want the least preset structure. Begin with one empty stage, then define the amount, duration, schedule and any additional stages yourself."],
-      ].map(([title, sub, help], idx) => (
-        <Pressable accessibilityRole="button" accessibilityLabel={title} key={title} onPress={() => startPlan((["staged", "steady", "custom"] as PlanMode[])[idx])} style={styles.planOption}>
+        ["Basic Plan", "Recommended", "One amount and one schedule. The simplest place to start.", "Start with one simple step using the amount and schedule you enter. You can add more steps later if your plan changes.", "steady"],
+        ["Advanced Plan", "", "Use multiple steps when the amount or timing changes.", "Start with several editable steps. Each step can have its own amount, duration and schedule.", "staged"],
+      ].map(([title, badge, sub, help, mode], idx) => (
+        <Pressable accessibilityRole="button" accessibilityLabel={title} key={title} onPress={() => startPlan(mode as PlanMode)} style={styles.planOption}>
           <View style={[styles.planBars, { backgroundColor: idx === 0 ? COLORS.paleBlue : COLORS.palePurple }]}>
             <Text style={[styles.planBarsText, { color: idx === 0 ? COLORS.blue : COLORS.purple }]}>▥</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <View style={{flexDirection:"row",alignItems:"center"}}><Text style={styles.planOptionTitle}>{title}</Text><ProfessorHelp title={title} body={help} note="These structures organize information you enter; they do not select an amount or recommend a plan."/></View>
+            <View style={{flexDirection:"row",alignItems:"center",flexWrap:"wrap"}}>
+              <Text style={styles.planOptionTitle}>{title}</Text>
+              {!!badge && <Text style={styles.smallBadge}> · {badge}</Text>}
+              <ProfessorHelp title={title} body={help} note="This choice only sets up the plan format. It does not choose an amount or recommend a plan."/>
+            </View>
             <Text style={styles.planOptionSub}>{sub}</Text>
           </View>
           <Text style={styles.cardArrow}>›</Text>
         </Pressable>
       ))}
 
-      <Text style={styles.helper}>Choosing a structure starts a new preview plan. My Plan keeps your current edits.</Text>
-      <AppButton label="Build My Plan" onPress={() => { if (saved.store.draft?.compoundId === selected.id) setScreen("plan"); else startPlan(); }} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Browse research references in Learn" onPress={() => openSchool(selected)}>
+        <Text style={styles.back}>Looking for a research reference? Browse Learn →</Text>
+      </Pressable>
     </ScrollView>
   );
 
