@@ -233,12 +233,12 @@ export function sameSchedule(a:Schedule|null,b:Schedule|null){
 }
 
 
-export type TaperOptions={type:'fixed'|'percentage';increment:string;period:string;periodUnit:'days'|'weeks';steps:string};
+export type TaperOptions={type:'fixed'|'percentage';increment:string;amountUnit?:'mg'|'mcg';period:string;periodUnit:'days'|'weeks';steps:string};
 export function buildTaperStages(first:Stage,options:TaperOptions):Stage[]{
- const start=Number(first.amountMg),increment=Number(options.increment),period=Number(options.period),steps=Number(options.steps);
- if(!Number.isFinite(start)||start<=0)throw Error('Enter the first-stage amount before building a taper.');
- if(!Number.isFinite(increment)||increment<=0)throw Error('Enter a positive taper increase.');
- if(!Number.isSafeInteger(period)||period<1||(options.periodUnit==='days'?period>728:period>104))throw Error('Choose a valid taper period.');
- if(!Number.isSafeInteger(steps)||steps<2||steps>24)throw Error('Choose 2–24 taper stages.');
- return Array.from({length:steps},(_,index)=>{const amount=options.type==='fixed'?start+increment*index:start*Math.pow(1+increment/100,index);return {...first,id:uid(),amountMg:String(Number(amount.toFixed(8))),weeks:options.periodUnit==='weeks'?String(period):'',duration:{value:String(period),unit:options.periodUnit},override:index===0?first.override:null};});
+ const start=Number(first.amountMg),displayIncrement=Number(options.increment),increment=(options.amountUnit??first.amountUnit)==='mcg'?displayIncrement/1000:displayIncrement,period=Number(options.period),steps=Number(options.steps);
+ if(!Number.isFinite(start)||start<=0)throw Error('Enter a positive starting amount.');
+ if(!Number.isFinite(displayIncrement)||displayIncrement<=0)throw Error('Enter a positive amount change.');
+ if(!Number.isSafeInteger(period)||period<1||(options.periodUnit==='days'?period>728:period>104))throw Error('Choose a valid stage length.');
+ if(!Number.isSafeInteger(steps)||steps<2||steps>24)throw Error('Choose 2–24 stages.');
+ return Array.from({length:steps},(_,index)=>{const amount=options.type==='fixed'?start+increment*index:start*Math.pow(1+displayIncrement/100,index);return {...first,id:uid(),amountMg:String(Number(amount.toFixed(8))),amountUnit:options.amountUnit??first.amountUnit??'mg',weeks:options.periodUnit==='weeks'?String(period):'',duration:{value:String(period),unit:options.periodUnit},override:index===0?first.override:null};});
 }
