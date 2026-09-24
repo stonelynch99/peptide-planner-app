@@ -49,7 +49,7 @@ export function scheduleError(s: Schedule | null): string | null {
 }
 export function newDraft(compound: Compound, mode='advanced'): Draft {
  const basic=mode==='steady'||mode==='basic';
- return {id:uid(),compoundId:compound.id,compoundName:compound.name,origin:null,customized:false,planMode:basic?'basic':'advanced',stageSetupConfirmed:basic?true:false,indefinite:true,stages:[{id:uid(),amountMg:'',amountUnit:'mg',weeks:'104',duration:{value:'104',unit:'weeks'},override:null}],defaultSchedule:null,breakWeeks:basic?'0':'',startDate:'',vialMg:compound.id==='glow-70'?'70':'',waterMl:'',initialVials:'',inventoryTracking:!basic,reviewed:false,reminderEnabled:true,reminderOffsetMinutes:0};
+ return {id:uid(),compoundId:compound.id,compoundName:compound.name,origin:null,customized:false,planMode:basic?'basic':'advanced',stageSetupConfirmed:basic?true:false,indefinite:true,stages:[{id:uid(),amountMg:'',amountUnit:'mg',weeks:'104',duration:{value:'104',unit:'weeks'},override:null}],defaultSchedule:null,breakWeeks:'0',startDate:'',vialMg:compound.id==='glow-70'?'70':'',waterMl:'',initialVials:'',inventoryTracking:!basic,reviewed:false,reminderEnabled:true,reminderOffsetMinutes:0};
 }
 export function importReference(compound: Compound, template?: PlanTemplate): Draft {
  const draft=newDraft(compound);draft.stageSetupConfirmed=true;const raw:Record<string,any>=JSON.parse(JSON.stringify(template?template.suppliedPlan:compound.researchPracticeReference?practiceTransfer(compound.researchPracticeReference):compound.supplied?.commonResearchPractice||{}));
@@ -78,7 +78,7 @@ export function importReference(compound: Compound, template?: PlanTemplate): Dr
  if(raw.stages?.length)draft.stages=raw.stages.map((stage:any)=>({id:uid(),amountMg:stage.amountMcg!=null?String(stage.amountMcg/1000):text(stage.amountMg),amountUnit:stage.amountMcg!=null?'mcg':'mg',weeks:text(stage.durationWeeks),override:withDefaults(normalizeSchedule(stage.schedule))}));
  else {draft.stages=draft.stages.slice(0,1);draft.stages[0].amountMg=raw.amountMcg!=null?String(raw.amountMcg/1000):text(raw.amountMg);draft.stages[0].amountUnit=raw.amountMcg!=null?'mcg':'mg';draft.stages[0].weeks=text(raw.durationWeeks);}
  draft.defaultSchedule=withDefaults(normalizeSchedule(raw.schedule||raw.frequency));
- draft.breakWeeks=text(raw.plannedBreakWeeks);
+ draft.breakWeeks=raw.plannedBreakWeeks==null?'0':text(raw.plannedBreakWeeks);
  if(raw.vialStrengthMg!=null)draft.vialMg=text(raw.vialStrengthMg);
  draft.waterMl=text(raw.diluentMl??raw.reconstitutionVolumeMl);
  draft.setupOrigin=setupOriginFor(compound.id,draft.stages[0]?.amountMg||'');
