@@ -10,7 +10,8 @@ export default function ScheduleSheet({initial,stageIndex,onClose,onSave,simple=
  const toggleDay=(day:number)=>change({days:value.days.includes(day)?value.days.filter(n=>n!==day):value.timesPerWeek===1?[day]:[...value.days,day].sort(),timesPerWeek:value.timesPerWeek});
  const weekdayError=/weekday/i.test(error)?error:undefined,intervalError=/interval|days on/i.test(error)?error:undefined,timeError=/time/i.test(error)&&!/times per week|scheduled days/i.test(error)?error:undefined,timesPerWeekError=/scheduled days per week|exactly .* weekdays/i.test(error)?error:undefined;
  const choose=(name:string)=>{
-  if(name==='Daily'||name==='Multiple times per day')change({kind:'daily',days:[],interval:null,timesPerWeek:null});
+  if(name==='Daily')change({kind:'daily',days:[],interval:null,timesPerWeek:null});
+  if(name==='Multiple times per day'){const first=value.times[0]||'09:00',second=first==='17:00'?'21:00':'17:00';change({kind:'daily',days:[],interval:null,timesPerWeek:null,times:value.times.length>=2?value.times:[first,second]});}
   if(name==='Once weekly')change({kind:'weekly',days:[],interval:null,timesPerWeek:1});
   if(name==='Twice weekly')change({kind:'weekly',days:[],interval:null,timesPerWeek:2});
   if(name==='Mon / Wed / Fri')change({kind:'weekly',days:[1,3,5],interval:null,timesPerWeek:3});
