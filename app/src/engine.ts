@@ -49,7 +49,7 @@ export function scheduleError(s: Schedule | null): string | null {
 }
 export function newDraft(compound: Compound, mode='advanced'): Draft {
  const basic=mode==='steady'||mode==='basic';
- return {id:uid(),compoundId:compound.id,compoundName:compound.name,origin:null,customized:false,planMode:basic?'basic':'advanced',stageSetupConfirmed:basic?true:false,indefinite:true,stages:[{id:uid(),amountMg:'',amountUnit:'mg',weeks:'104',duration:{value:'104',unit:'weeks'},override:null}],defaultSchedule:null,breakWeeks:'0',startDate:'',vialMg:compound.id==='glow-70'?'70':'',waterMl:'',initialVials:'',inventoryTracking:!basic,reviewed:false,reminderEnabled:true,reminderOffsetMinutes:0};
+ return {id:uid(),compoundId:compound.id,compoundName:compound.name,origin:null,customized:false,planMode:basic?'basic':'advanced',stageSetupConfirmed:basic?true:false,indefinite:true,stages:[{id:uid(),amountMg:'',amountUnit:'mg',weeks:'104',duration:{value:'104',unit:'weeks'},override:null}],defaultSchedule:null,breakWeeks:'0',startDate:'',vialMg:compound.id==='glow-70'?'70':'',waterMl:'',initialVials:'',inventoryTracking:false,reviewed:false,reminderEnabled:true,reminderOffsetMinutes:0};
 }
 export function importReference(compound: Compound, template?: PlanTemplate): Draft {
  const draft=newDraft(compound);draft.stageSetupConfirmed=true;const raw:Record<string,any>=JSON.parse(JSON.stringify(template?template.suppliedPlan:compound.researchPracticeReference?practiceTransfer(compound.researchPracticeReference):compound.supplied?.commonResearchPractice||{}));
