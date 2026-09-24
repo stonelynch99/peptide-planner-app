@@ -8,14 +8,14 @@ import { calculate } from './planning';
 export type Schedule = { kind: 'daily' | 'weekly' | 'intervalDays' | 'intervalHours' | 'cycle'; days: number[]; times: string[]; interval: number | null; timesPerWeek?: number | null; cycleOn?: number | null; cycleOff?: number | null };
 export type Stage = { id: string; amountMg: string; amountUnit: 'mg'|'mcg'; weeks: string; duration?:StageDuration; durationWeeks?:number|string; override: Schedule | null };
 export type Origin = { title: string; sourceClass: string; sourceTitle: string; sourceIds: string[]; originalStages: unknown[]; originalReference: Record<string, any>; packVersion: string; disclaimer?: string };
-export type Draft = { pausedAt?:string|null; indefinite?:boolean; inventoryTracking?:boolean; cycleOnWeeks?:string; cycleOffWeeks?:string; id: string; compoundId: string; compoundName: string; origin: Origin | null; customized: boolean; stages: Stage[]; defaultSchedule: Schedule | null; breakWeeks: string; startDate: string; vialMg: string; waterMl: string; initialVials: string; setupOrigin?:SetupOrigin|null; syringeCapacityUnits?:30|50|100|null; blendComposition?:{component:string;amountMg:number}[]; uxDefaults?: string[]; reviewed: boolean; reminderEnabled: boolean; reminderOffsetMinutes: number };
+export type Draft = { pausedAt?:string|null; planMode?:'basic'|'advanced'; indefinite?:boolean; inventoryTracking?:boolean; cycleOnWeeks?:string; cycleOffWeeks?:string; id: string; compoundId: string; compoundName: string; origin: Origin | null; customized: boolean; stages: Stage[]; defaultSchedule: Schedule | null; breakWeeks: string; startDate: string; vialMg: string; waterMl: string; initialVials: string; setupOrigin?:SetupOrigin|null; syringeCapacityUnits?:30|50|100|null; blendComposition?:{component:string;amountMg:number}[]; uxDefaults?: string[]; reviewed: boolean; reminderEnabled: boolean; reminderOffsetMinutes: number };
 export type Event = { id: string; stageId: string; stageIndex: number; scheduledAt: string; localDate: string; amountMg: number; amountUnit: 'mg'|'mcg'; calculation: NonNullable<ReturnType<typeof calculate>>; calculationUnavailable?: boolean; status: 'pending' | 'completed' | 'skipped'; completedAt?: string; skippedAt?: string; snoozedUntil?: string };
 export type PlanRevision = {changedAt:string;previous:Draft;inventoryTotalMg:number|null};
 export type ActiveEdit = {planId:string;draft:Draft;baseSettings:string;supplyVials:string;returnTo?:'tracker'|'plans'|'planDetail';inventoryChange?:import('./inventory-maintenance').InventoryChange};
 export type SavedPlan = Draft & { inventoryLedger?:{at:string;kind:string;previousTotalMg:number|null;totalMg:number}[]; revisions?:PlanRevision[]; activatedAt: string; events: Event[]; inventoryTotalMg: number | null; timezone: string };
 export type Store = { version: 3; activeEdit?:ActiveEdit|null; activePlans?: SavedPlan[]; draft: Draft | null; active: SavedPlan | null; archives: SavedPlan[] };
 export const blankStore = (): Store => ({ version: 3, draft: null, active: null, archives: [] });
-export const blankSchedule = (): Schedule => ({ kind: 'weekly', days: [6], times: ['09:00'], interval: null, timesPerWeek: 1 });
+export const blankSchedule = (): Schedule => ({ kind: 'weekly', days: [], times: ['09:00'], interval: null, timesPerWeek: 1 });
 export const uid = () => Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
 export const localDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 export function parseDate(text: string) { const parts=/^(\d{4})-(\d{2})-(\d{2})$/.exec(text); if(!parts)return null; const date=new Date(+parts[1],+parts[2]-1,+parts[3]); return localDate(date)===text && +parts[1]>=2000 && +parts[1]<=2100 ? date : null; }
@@ -47,8 +47,9 @@ export function scheduleError(s: Schedule | null): string | null {
   if(s.kind==='cycle'&&(!Number.isInteger(s.cycleOn)||!Number.isInteger(s.cycleOff)||s.cycleOn!<1||s.cycleOn!>30||s.cycleOff!<1||s.cycleOff!>30))return 'Choose 1–30 days on and 1–30 days off.';
   return null;
 }
-export function newDraft(compound: Compound, mode='custom'): Draft {
- return {id:uid(),compoundId:compound.id,compoundName:compound.name,origin:null,customized:false,stages:Array.from({length:mode==='staged'?3:1},()=>({id:uid(),amountMg:'',amountUnit:'mg',weeks:'',override:null})),defaultSchedule:null,breakWeeks:'',startDate:'',vialMg:compound.id==='glow-70'?'70':'',waterMl:'',initialVials:'',inventoryTracking:true,reviewed:false,reminderEnabled:true,reminderOffsetMinutes:0};
+export function newDraft(compound: Compound, mode='advanced'): Draft {
+ const basic=mode==='steady'||mode==='basic';
+ return {id:uid(),compoundId:compound.id,compoundName:compound.name,origin:null,customized:false,planMode:basic?'basic':'advanced',indefinite:basic,stages:Array.from({length:mode==='staged'?3:1},()=>({id:uid(),amountMg:'',amountUnit:'mg',weeks:basic?'104':'',duration:basic?{value:'104',unit:'weeks'}:undefined,override:null})),defaultSchedule:null,breakWeeks:basic?'0':'',startDate:'',vialMg:compound.id==='glow-70'?'70':'',waterMl:'',initialVials:'',inventoryTracking:!basic,reviewed:false,reminderEnabled:true,reminderOffsetMinutes:0};
 }
 export function importReference(compound: Compound, template?: PlanTemplate): Draft {
  const draft=newDraft(compound);const raw:Record<string,any>=JSON.parse(JSON.stringify(template?template.suppliedPlan:compound.researchPracticeReference?practiceTransfer(compound.researchPracticeReference):compound.supplied?.commonResearchPractice||{}));
