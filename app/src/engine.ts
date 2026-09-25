@@ -110,7 +110,6 @@ export function validateDraft(d: Draft): string[] {
  if(!d.stages.length||d.stages.length>24)errors.push('Use between one and 24 stages.');
  d.stages.forEach((s,i)=>{if(!s.amountMg.trim()||!Number.isFinite(Number(s.amountMg))||Number(s.amountMg)<=0)errors.push('Stage '+(i+1)+': enter a positive amount.');const durationIssue=durationError(s);if(durationIssue)errors.push('Stage '+(i+1)+': '+durationIssue); const err=scheduleError(s.override||d.defaultSchedule);if(err)errors.push('Stage '+(i+1)+': '+err);});
  if(d.breakWeeks==='' || !/^\d+$/.test(d.breakWeeks)||Number(d.breakWeeks)>104)errors.push('Choose a planned break, or confirm no break.');
- if(d.indefinite&&Number(d.breakWeeks)>0)errors.push('A plan with no planned end date cannot have a final rest period. Choose a set plan length or remove the final rest.');
  if((d.cycleOnWeeks||d.cycleOffWeeks)&&(!/^\d+$/.test(d.cycleOnWeeks||'')||!/^\d+$/.test(d.cycleOffWeeks||'')||Number(d.cycleOnWeeks)<1||Number(d.cycleOffWeeks)<1||Number(d.cycleOnWeeks)>104||Number(d.cycleOffWeeks)>104))errors.push('Choose valid repeating cycle weeks, or turn the repeating cycle off.');
  if(!calculate(d.vialMg,d.waterMl,'1'))errors.push('Enter valid vial strength and diluent volume.');
  if(d.initialVials!==''&&(!Number.isFinite(Number(d.initialVials))||Number(d.initialVials)<0))errors.push('Enter a valid supply quantity.');
