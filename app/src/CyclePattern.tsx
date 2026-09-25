@@ -1,15 +1,14 @@
-import React,{useEffect,useState} from 'react';
+import React from 'react';
 import {Pressable,Text,View} from 'react-native';
-import {Field,u} from './ui';
+import {Field,ProfessorHelp,u} from './ui';
 
-export default function CyclePattern({onWeeks,offWeeks,error,onChange}:{onWeeks?:string;offWeeks?:string;error?:string;onChange:(value:{cycleOnWeeks?:string;cycleOffWeeks?:string})=>void}){
- const savedMode=!onWeeks&&!offWeeks?'none':onWeeks==='12'&&offWeeks==='4'?'12-4':'custom';
- const [customOpen,setCustomOpen]=useState(savedMode==='custom');
- useEffect(()=>{if(savedMode==='custom')setCustomOpen(true);},[savedMode]);
- const mode=customOpen?'custom':savedMode;
- const choose=(next:'none'|'12-4'|'custom')=>{
-  setCustomOpen(next==='custom');
-  onChange(next==='none'?{cycleOnWeeks:undefined,cycleOffWeeks:undefined}:next==='12-4'?{cycleOnWeeks:'12',cycleOffWeeks:'4'}:{cycleOnWeeks:onWeeks||'',cycleOffWeeks:offWeeks||''});
- };
- return <View style={{gap:8}}><Text style={u.heading}>Should this plan repeat after a break?</Text><Text style={u.small}>Most plans do not repeat. Choose a repeating cycle only when the same active period and break should continue again automatically.</Text>{([{key:'none',label:'No — run the plan once'},{key:'12-4',label:'Repeat: 12 weeks active, then 4 weeks off'},{key:'custom',label:'Choose a custom repeating cycle'}] as const).map(item=><Pressable key={item.key} accessibilityRole="radio" accessibilityState={{checked:mode===item.key}} onPress={()=>choose(item.key)} style={[u.pill,mode===item.key&&u.selected]}><Text style={u.body}>{mode===item.key?'✓ ':''}{item.label}</Text></Pressable>)}{mode==='custom'&&<><Text style={u.small}>Enter how long the plan stays active before each repeating break.</Text><View style={u.row}><View style={{flex:1}}><Field label="Active weeks" value={onWeeks||''} numeric error={error} onChange={value=>onChange({cycleOnWeeks:value,cycleOffWeeks:offWeeks||''})}/></View><View style={{flex:1}}><Field label="Break weeks" value={offWeeks||''} numeric error={error} onChange={value=>onChange({cycleOnWeeks:onWeeks||'',cycleOffWeeks:value})}/></View></View></>}<Text style={u.small}>During a repeating break, no events are due. The plan resumes automatically after the break.</Text></View>;
+export type PlanTimingMode='once'|'ongoing'|'repeat';
+
+export default function CyclePattern({mode,basic,onWeeks,offWeeks,error,onMode,onChange,children}:{mode:PlanTimingMode;basic:boolean;onWeeks?:string;offWeeks?:string;error?:string;onMode:(mode:PlanTimingMode)=>void;onChange:(value:{cycleOnWeeks?:string;cycleOffWeeks?:string})=>void;children?:React.ReactNode}){
+ const choices=[
+  {key:'once' as const,title:'Run once',body:basic?'Choose how many weeks, then the plan ends.':'The plan ends after its final stage.'},
+  {key:'ongoing' as const,title:'No planned end',body:'Continue until you edit or end the plan.'},
+  {key:'repeat' as const,title:'Repeat with breaks',body:'Alternate an active period and a break.'}
+ ];
+ return <View><View style={u.row}><Text style={[u.heading,{marginBottom:0,flex:1}]}>Plan timing</Text><ProfessorHelp title="Plan timing" body="Run once ends after the length you choose. No planned end continues until you change it. Repeat with breaks automatically alternates active weeks and break weeks."/></View><Text style={u.small}>Choose one. The other timing options will be turned off.</Text><View style={{gap:8,marginTop:10}}>{choices.map(choice=><Pressable key={choice.key} accessibilityRole="radio" accessibilityState={{checked:mode===choice.key}} onPress={()=>onMode(choice.key)} style={[{paddingVertical:10,paddingHorizontal:12,borderRadius:12,borderWidth:1,borderColor:'#dbe5ef',backgroundColor:'#f7f9fc'},mode===choice.key&&{borderColor:'#19b3e3',backgroundColor:'#e7f8fd'}]}><Text style={[u.heading,{marginBottom:2,fontSize:15}]}>{mode===choice.key?'✓ ':''}{choice.title}</Text><Text style={u.small}>{choice.body}</Text></Pressable>)}</View>{mode==='once'&&children}{mode==='repeat'&&<View style={{marginTop:14,padding:12,borderRadius:12,backgroundColor:'#eef9fd'}}><Text style={u.heading}>Set the repeating cycle</Text><Text style={u.small}>Example: 12 active weeks and 4 break weeks will repeat continuously.</Text><View style={u.row}><View style={{flex:1}}><Field label="Active weeks" value={onWeeks||''} numeric error={error} onChange={value=>onChange({cycleOnWeeks:value,cycleOffWeeks:offWeeks||''})}/></View><View style={{flex:1}}><Field label="Break weeks" value={offWeeks||''} numeric error={error} onChange={value=>onChange({cycleOnWeeks:onWeeks||'',cycleOffWeeks:value})}/></View></View>{onWeeks&&offWeeks&&<Text style={u.body}>{onWeeks} weeks active → {offWeeks} weeks off → repeat</Text>}</View>}</View>;
 }
