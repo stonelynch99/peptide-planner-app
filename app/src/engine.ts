@@ -205,6 +205,19 @@ export function inventoryCoverage(plan:SavedPlan,now=new Date()) {
  const status=supply===null?'not-entered':supply<=1e-9&&pending.length?'out':daysUntilUncovered!==null&&daysUntilUncovered<=INVENTORY_URGENT_DAYS?'urgent':daysUntilUncovered!==null&&daysUntilUncovered<=INVENTORY_ATTENTION_DAYS?'attention':'covered';
  return {used,supply,required,firstUncovered,enough:supply===null?null:supply+1e-9>=required,vials:supply===null?null:supply/Number(plan.vialMg),days:supply===null?null:firstUncovered?daysUntilUncovered:actualProgress(plan,now).daysRemaining,daysUntilUncovered,coveredDoses,status};
 }
+export function inventoryOutlook(plan:Draft|SavedPlan,now?:Date) {
+ const vialMg=Number(plan.vialMg);
+ if(!Number.isFinite(vialMg)||vialMg<=0)return null;
+ if(plan.indefinite)return {kind:'ongoing' as const,vialMg};
+ let events:Event[];
+ try{events=generateEvents({...plan,inventoryTracking:false,initialVials:''});}catch{return null;}
+ const remaining=now?events.filter(event=>new Date(event.scheduledAt)>=now):events;
+ const requiredMg=remaining.reduce((total,event)=>total+event.amountMg,0);
+ const saved=plan as SavedPlan;
+ const completedMg=Array.isArray(saved.events)?saved.events.filter(event=>event.status==='completed').reduce((total,event)=>total+event.amountMg,0):0;
+ const supplyMg=typeof saved.inventoryTotalMg==='number'?Math.max(0,saved.inventoryTotalMg-completedMg):plan.initialVials.trim()!==''&&Number.isFinite(Number(plan.initialVials))?Number(plan.initialVials)*vialMg:null;
+ return {kind:'finite' as const,vialMg,requiredMg,vialEquivalents:requiredMg/vialMg,totalVials:Math.ceil(requiredMg/vialMg),supplyMg,additionalVials:supplyMg===null?null:Math.ceil(Math.max(0,requiredMg-supplyMg)/vialMg)};
+}
 export function glowComponents(amountMg:number) {return [{name:'GHK-Cu',amountMg:amountMg*5/7,unit:'mg' as const},{name:'BPC-157',amountMg:amountMg/7,unit:'mg' as const},{name:'TB-500',amountMg:amountMg/7,unit:'mg' as const}];}
 export function decodeStore(raw:string):Store {
  const value=JSON.parse(raw);if(value?.version!==3||!Array.isArray(value.archives)||!('draft'in value)||!('active'in value))throw Error('Saved data has an unsupported format. It has been preserved.');
