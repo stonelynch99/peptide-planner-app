@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import NativeAsyncStorage from '@react-native-async-storage/async-storage';
+import {Platform} from 'react-native';
+import {localSaveError,indexedPlannerStorage,withPlannerFallback} from './persistence-v04';
+const factory=Platform.OS==='web'?(globalThis as any).indexedDB as IDBFactory|undefined:undefined;
+export const plannerStorage=factory?withPlannerFallback(NativeAsyncStorage,indexedPlannerStorage(factory)):NativeAsyncStorage;
+const AsyncStorage=plannerStorage;
 import { blankStore } from './engine';
 import {decodePlannerStore,encodeCompactPlannerStore,decodeCompactPlannerStore,compactPlannerStore,STORAGE_KEY_V04,LEGACY_STORAGE_KEY} from './persistence-v04';
 import type { Store } from './engine';
@@ -45,9 +50,8 @@ export function usePlannerStore(){
  const update=(change:(old:Store)=>Store)=>{
   if(!ready||loadFailed.current)return Promise.reject(Error('Saved data is not available.'));
   const next=compactPlannerStore(change(current.current));current.current=next;setStore(next);setSaving(true);const rev=++revision.current;
-  const encoded=encodeCompactPlannerStore(next);
-  const write=queue.current.catch(()=>{}).then(async()=>{await AsyncStorage.setItem(STORAGE_KEY,encoded);await AsyncStorage.setItem(RECOVERY_STORAGE_KEY,encoded).catch(()=>{});});
-  queue.current=write;write.then(()=>{if(rev===revision.current){setSaving(false);setError('');}},()=>{if(rev===revision.current){setSaving(false);setError('Could not save on this device. Keep the app open and tap Retry save.');}});
+  const write=queue.current.catch(()=>{}).then(async()=>{const encoded=encodeCompactPlannerStore(next);await AsyncStorage.setItem(STORAGE_KEY,encoded);await AsyncStorage.setItem(RECOVERY_STORAGE_KEY,encoded).catch(()=>{});});
+  queue.current=write;write.then(()=>{if(rev===revision.current){setSaving(false);setError('');}},cause=>{if(rev===revision.current){setSaving(false);setError(localSaveError(cause));}});
   return write;
  };
  return {store,ready,error,saving,update,recover,loadFailed:loadFailed.current,retry:()=>update(old=>({...old}))};

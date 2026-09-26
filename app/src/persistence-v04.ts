@@ -201,3 +201,49 @@ export function importReadyExternalPeptides(store:Store,preview:ExternalCsvPrevi
  }
  return {store:{...store,activePlans:plans,active:plans[0]??null,archives},created,activeCreated,archivedCreated,historyAdded,duplicatesSkipped};
 }
+
+export type StringStorage={getItem(key:string):Promise<string|null>;setItem(key:string,value:string):Promise<void>};
+
+// Preserve all old localStorage values. Once a key needs the durable fallback,
+// keep reading/writing it there so a refresh cannot resurrect an older value.
+export function withPlannerFallback(primary:StringStorage,durable:StringStorage):StringStorage{
+ return {
+  async getItem(key){const saved=await durable.getItem(key);return saved===null?primary.getItem(key):saved;},
+  async setItem(key,value){
+   if(await durable.getItem(key)!==null){await durable.setItem(key,value);return;}
+   try{await primary.setItem(key,value);}
+   catch{await durable.setItem(key,value);}
+  }
+ };
+}
+
+// Separate working values from existing safety copies; never delete either.
+export function indexedPlannerStorage(factory:IDBFactory):StringStorage{
+ const open=()=>new Promise<IDBDatabase>((resolve,reject)=>{
+  const request=factory.open('ezpep-planner-working',1);
+  request.onupgradeneeded=()=>request.result.createObjectStore('values');
+  request.onerror=()=>reject(request.error);
+  request.onblocked=()=>reject(new Error('LocalStorageBlocked'));
+  request.onsuccess=()=>resolve(request.result);
+ });
+ async function operation(key:string,value?:string):Promise<string|null>{
+  const db=await open();
+  return new Promise((resolve,reject)=>{
+   let result:string|null=null;
+   const tx=db.transaction('values',value===undefined?'readonly':'readwrite');
+   const store=tx.objectStore('values');
+   const request=value===undefined?store.get(key):store.put(value,key);
+   request.onsuccess=()=>{if(value===undefined)result=request.result??null;};
+   tx.oncomplete=()=>{db.close();resolve(result);};
+   tx.onabort=()=>{db.close();reject(tx.error??new Error('LocalWriteAborted'));};
+   tx.onerror=()=>{}; // onabort owns the failed transaction; never acknowledge request-only success.
+  });
+ }
+ return {getItem:key=>operation(key),setItem:async(key,value)=>{await operation(key,value);}};
+}
+
+export function localSaveError(error:unknown):string{
+ const name=error instanceof Error?error.name:'';
+ const detail=name==='QuotaExceededError'?'Device storage is full.':name==='SecurityError'?'Browser storage access is blocked.':'Local storage could not commit the change.';
+ return 'Could not save on this device. '+detail+' Keep the app open and tap Retry save.';
+}

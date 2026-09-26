@@ -48,3 +48,32 @@ test('automatic sync uploads only local changes from the known cloud revision',(
 test('automatic sync downloads only newer cloud changes when local stayed at the baseline',()=>{assert.equal(decideAutomaticSync('base','desktop-new',4,{revision:3,payload:'base'}),'download');});
 test('automatic sync refuses concurrent device changes instead of choosing by clock time',()=>{assert.equal(decideAutomaticSync('phone-new','desktop-new',4,{revision:3,payload:'base'}),'attention');});
 test('automatic sync refuses same-revision payload mutation',()=>{assert.equal(decideAutomaticSync('base','unexpected',3,{revision:3,payload:'base'}),'attention');});
+
+// Focused device storage regression tests.
+{
+require('./register-tests.cjs');
+const test=require('node:test'),assert=require('node:assert/strict');
+const {withPlannerFallback,localSaveError}=require('./app/src/persistence-v04.ts');
+const E=require('./app/src/engine.ts'),A=require('./app/src/active-edit-v04.ts'),P=require('./app/src/persistence-v04.ts');
+const {library}=require('./app/src/library-v04.ts');
+const {reviewSync,uploadReviewed,decideAutomaticSync}=require('./app/src/cloud/planner-sync.ts');
+const memory=()=>{const data=new Map();return {data,getItem:async k=>data.get(k)??null,setItem:async(k,v)=>{data.set(k,v);}};};
+test('ordinary save preserves primary path and existing unrelated keys',async()=>{const p=memory(),d=memory(),s=withPlannerFallback(p,d);p.data.set('unrelated','keep');await s.setItem('plan','new');assert.equal(await s.getItem('plan'),'new');assert.equal(p.data.get('unrelated'),'keep');assert.equal(d.data.size,0);});
+test('quota failure commits fallback; restart reads it instead of stale primary',async()=>{const p=memory(),d=memory();p.data.set('plan','old');p.setItem=async()=>{throw new DOMException('full','QuotaExceededError');};await withPlannerFallback(p,d).setItem('plan','new');assert.equal(await withPlannerFallback(p,d).getItem('plan'),'new');assert.equal(p.data.get('plan'),'old');});
+test('fallback stays authoritative even if localStorage later has room',async()=>{const p=memory(),d=memory();d.data.set('plan','new');await withPlannerFallback(p,d).setItem('plan','newest');assert.equal(d.data.get('plan'),'newest');assert.equal(p.data.size,0);});
+test('failed durable commit rejects; retry succeeds without clearing old values',async()=>{const p=memory(),d=memory();p.data.set('plan','old');p.setItem=async()=>{throw new DOMException('full','QuotaExceededError');};const write=d.setItem;d.setItem=async()=>{throw new DOMException('full','QuotaExceededError');};const s=withPlannerFallback(p,d);await assert.rejects(s.setItem('plan','new'),{name:'QuotaExceededError'});assert.equal(p.data.get('plan'),'old');d.setItem=write;await s.setItem('plan','new');assert.equal(await s.getItem('plan'),'new');});
+test('unavailable durable read fails closed rather than resurrecting stale primary',async()=>{const p=memory(),d=memory();p.data.set('plan','old');d.getItem=async()=>{throw Error('unavailable');};await assert.rejects(withPlannerFallback(p,d).getItem('plan'),/unavailable/);});
+test('error messages expose only safe storage categories',()=>{assert.match(localSaveError(new DOMException('private data','QuotaExceededError')),/storage is full/);assert.match(localSaveError(new DOMException('private data','SecurityError')),/access is blocked/);assert.doesNotMatch(localSaveError(Error('private data')),/private data/);});
+test('changed 5-Amino weekday survives restart and reviewed cloud upload; dose/history/other plans unchanged',async()=>{
+ const compound=library.find(x=>x.id==='5-amino-1mq');assert.ok(compound);
+ const plan=E.activate({...E.newDraft(compound),stages:[{id:'s',amountMg:'1',amountUnit:'mg',weeks:'8',override:null}],defaultSchedule:{kind:'weekly',days:[1],times:['09:00'],interval:null,timesPerWeek:1},startDate:E.localDate(),breakWeeks:'0',vialMg:'10',waterMl:'2',initialVials:'1',reviewed:true});
+ const old={...E.blankStore(),activePlans:[plan],active:plan};const edit=A.beginActiveEdit(plan);edit.draft.defaultSchedule.days=[3];
+ const next=A.applyActiveEdit(old,edit),payload=P.encodeCompactPlannerStore(next);
+ const p=memory(),d=memory();p.data.set(P.STORAGE_KEY_V04,P.encodeCompactPlannerStore(old));p.setItem=async()=>{throw new DOMException('full','QuotaExceededError');};
+ await withPlannerFallback(p,d).setItem(P.STORAGE_KEY_V04,payload);
+ const restored=P.decodeCompactPlannerStore(await withPlannerFallback(p,d).getItem(P.STORAGE_KEY_V04));assert.deepEqual(restored.active.defaultSchedule.days,[3]);assert.equal(restored.active.stages[0].amountMg,plan.stages[0].amountMg);assert.equal(restored.active.vialMg,plan.vialMg);assert.deepEqual(restored.archives,old.archives);
+ const row={user_id:'synthetic',schema_version:4,revision:1,updated_at:new Date().toISOString(),snapshot:P.encodeCompactPlannerStore(old)};const review=reviewSync('synthetic',restored,row);assert.equal(decideAutomaticSync(review.localPayload,review.cloudPayload,1,{revision:1,payload:review.cloudPayload}),'upload');
+ let uploaded;await uploadReviewed(review,()=>restored,true,{userId:async()=>'synthetic',read:async()=>row,backup:async()=>{},upload:async value=>{uploaded=value;return 2;},apply:async()=>{throw Error('Must not download');}});assert.deepEqual(P.decodePlannerStore(uploaded).active.defaultSchedule.days,[3]);
+});
+
+}
