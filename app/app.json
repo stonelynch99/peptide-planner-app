@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Peptide Planner Prototype",
-    "slug": "peptide-planner-prototype",
-    "version": "0.3.3",
+    "name": "EZPep Planner",
+    "slug": "ezpep-planner",
+    "version": "0.4.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "android": {
-      "package": "com.prototype.peptideplanner",
+      "package": "com.ezpep.planner",
       "permissions": [
         "android.permission.SCHEDULE_EXACT_ALARM"
       ]
@@ -14,6 +14,13 @@
     "plugins": [
       "expo-notifications",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "web": {
+      "output": "single",
+      "bundler": "metro"
+    },
+    "experiments": {
+      "baseUrl": ""
+    }
   }
 }

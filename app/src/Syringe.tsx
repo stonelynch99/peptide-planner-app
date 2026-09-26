@@ -4,13 +4,13 @@ import Svg,{Defs,LinearGradient,Stop,Rect,Line,Path,Text as SvgText} from 'react
 import {calculate} from './planning';
 import {glowComponents} from './engine';
 import{Quantity,quantityLabel,toMg,syringeScale}from'./quantities';
-import{u}from'./ui';
+import{ProfessorHelp,u}from'./ui';
 export default function Syringe({result,amount,glow=false,capacityOverride,onCapacityChange}:{capacityOverride?:30|50|100|null;onCapacityChange?:(size:30|50|100)=>void;result:ReturnType<typeof calculate>;amount:Quantity|null;glow?:boolean}){
  const [selected,setSelected]=useState<30|50|100|null>(null);
  const {capacity,x,exceeds,minor,major}=syringeScale(result?.units??null,capacityOverride===undefined?selected:capacityOverride);
  const ticks=Array.from({length:capacity/minor+1},(_,i)=>i*minor),labels=Array.from({length:capacity/major+1},(_,i)=>i*major);
  return <View style={s.card}>
-  <Text style={[s.label,{marginBottom:10}]}>SYRINGE CAPACITY · U-100</Text>
+  <View style={{flexDirection:"row",alignItems:"center",marginBottom:10}}><Text style={s.label}>SYRINGE CAPACITY · U-100</Text><ProfessorHelp title="Syringe capacity" body="A U-100 syringe has 100 units per millilitre. The 0.3, 0.5 and 1.0 mL choices show 30, 50 and 100-unit barrels so the same calculated draw can be viewed on the matching scale." note="Changing the displayed syringe size does not change the calculated amount or concentration."/></View>
   <View style={{flexDirection:'row',gap:6,alignSelf:'stretch',marginBottom:14}}>{([30,50,100] as const).map(size=><Pressable key={size} accessibilityRole="radio" accessibilityLabel={(size/100).toFixed(1)+' mL syringe'} accessibilityState={{checked:capacity===size}} aria-checked={capacity===size} onPress={()=>{setSelected(size);onCapacityChange?.(size)}} style={[{flex:1,paddingVertical:12,borderRadius:12,alignItems:'center',backgroundColor:'#f2f6fc'},capacity===size&&u.selected]}><Text style={{fontSize:14,color:'#12204a',fontWeight:'700'}}>{(size/100).toFixed(1)} mL</Text></Pressable>)}</View>
   <Text style={s.label}>{exceeds?'DRAW EXCEEDS SELECTED SYRINGE':'DRAW TO'}</Text>
   <Text style={s.answer} testID="syringe-units">{result?Number(result.units.toFixed(3)):'—'} UNITS</Text>

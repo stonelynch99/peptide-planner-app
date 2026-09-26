@@ -1,0 +1,55 @@
+name: Peptide Planner CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install root test dependencies
+        run: npm ci
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+      - name: 0.3.3 regression tests
+        run: node --test engine033.test.cjs setup033.test.cjs calculation032.test.cjs native-time031.test.cjs reminders03.test.cjs notification-capability03.test.cjs
+      - name: 0.4 multi-plan engine tests
+        run: node --test multiplan04.test.cjs
+      - name: 0.4 migration tests
+        run: node --test multiplan-migration04.test.cjs
+      - name: 0.4 review-surface tests
+        run: node --test ui04.test.cjs review04.test.cjs
+      - name: TypeScript diagnostics
+        id: tsc
+        working-directory: app
+        shell: bash
+        run: |
+          set +e
+          npx tsc --noEmit > ../tsc.log 2>&1
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload TypeScript diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-diagnostics
+          path: tsc.log
+      - name: TypeScript gate
+        run: test "${{ steps.tsc.outputs.code }}" = "0"
+      - name: Expo dependency check
+        working-directory: app
+        run: npx expo install --check
+      - name: Expo Doctor
+        working-directory: app
+        run: npx expo-doctor

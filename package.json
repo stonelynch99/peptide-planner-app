@@ -1,10 +1,17 @@
 {
   "name": "peptide-planner-app-source",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
-    "test": "node --test engine033.test.cjs setup033.test.cjs calculation032.test.cjs native-time031.test.cjs reminders03.test.cjs notification-capability03.test.cjs",
-    "test:ui": "node ui033.test.cjs"
+    "test": "node --test engine033.test.cjs setup033.test.cjs calculation032.test.cjs native-time031.test.cjs reminders03.test.cjs notification-capability03.test.cjs multiplan04.test.cjs multiplan-migration04.test.cjs ui04.test.cjs integration04.test.cjs review04.test.cjs school-profile04.test.cjs tracker-polish04.test.cjs active-edit04.test.cjs event-undo04.test.cjs density04.test.cjs persistence-upgrade04.test.cjs duration04.test.cjs maintenance04.test.cjs supabase-foundation.test.cjs cloud-data-controls.test.cjs cloud-sync.test.cjs",
+    "test:ui": "node ui033.test.cjs",
+    "test:integration-ui": "node integration-ui04.cjs",
+    "test:refinement-ui": "node refinement-ui04.cjs",
+    "test:finish-ui": "node finish-ui04.cjs",
+    "test:density-ui": "node density-ui04.cjs",
+    "test:persistence-ui": "node upgrade-persistence-ui04.cjs",
+    "test:cloud-ui": "node cloud-data-ui.cjs",
+    "test:supabase": "node --test supabase-foundation.test.cjs cloud-data-controls.test.cjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

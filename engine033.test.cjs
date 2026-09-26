@@ -28,7 +28,7 @@ test('common practice copies all fields, amounts and units, without substituting
 });
 test('adapter copies supported supplied extension fields without changing originals',()=>{
  const c=compounds[0],t=structuredClone(c.school.referenceSchedules[0]);Object.assign(t.suppliedPlan,{vialStrengthMg:12,reconstitutionVolumeMl:3,plannedBreakWeeks:2,startDate:'2026-09-07',schedule:{kind:'daily',days:[],times:['08:00'],interval:null}});
- const d=E.importReference(c,t);assert.equal(d.vialMg,'10');assert.equal(d.waterMl,'2');assert.equal(d.breakWeeks,'2');assert.equal(d.defaultSchedule.kind,'daily');d.stages[0].amountMg='99';assert.equal(t.suppliedPlan.stages[0].amountMg,2);
+ const d=E.importReference(c,t);assert.equal(d.vialMg,'12');assert.equal(d.waterMl,'3');assert.equal(d.breakWeeks,'2');assert.equal(d.defaultSchedule.kind,'daily');d.stages[0].amountMg='99';assert.equal(t.suppliedPlan.stages[0].amountMg,2);
 });
 test('weekly events cross stage boundary once and exclude planned break',()=>{
  const events=E.generateEvents(make());assert.deepEqual(events.map(e=>e.localDate),['2026-09-07','2026-09-14','2026-09-21','2026-09-28']);assert.deepEqual(events.map(e=>e.amountMg),[2,2,3,3]);assert.equal(new Set(events.map(e=>e.id)).size,4);
@@ -106,3 +106,88 @@ test('review blocks unresolved inputs and calculation rejects blank or zero valu
 });
 
 test('equivalent schedules do not create accidental stage overrides',()=>{assert.ok(E.sameSchedule({kind:'daily',days:[],times:['09:00'],interval:null},{kind:'daily',days:[1,2],times:['09:00'],interval:null,timesPerWeek:null}));assert.ok(!E.sameSchedule({kind:'daily',days:[],times:['09:00'],interval:null},{kind:'daily',days:[],times:['10:00'],interval:null}));});
+
+test('inventory warnings follow scheduled-dose coverage rather than vial fraction or full-plan supply',()=>{
+ const now=new Date('2026-09-09T12:00:00Z');
+ const make=(kind,vials)=>E.activate({id:'coverage-'+kind+'-'+vials,compoundId:'tesamorelin',compoundName:'Tesamorelin',origin:null,customized:true,stages:[{id:'s1',amountMg:'1',amountUnit:'mg',weeks:'4',override:null}],defaultSchedule:{kind,days:kind==='weekly'?[3]:[],times:['09:00'],interval:null},breakWeeks:'0',startDate:'2026-09-09',vialMg:'10',waterMl:'2',initialVials:vials,reviewed:true,reminderEnabled:false,reminderOffsetMinutes:0},now);
+ const tenDaily=E.inventoryCoverage(make('daily','1'),now);
+ assert.equal(tenDaily.coveredDoses,10);
+ assert.equal(tenDaily.status,'attention');
+ assert.ok(tenDaily.daysUntilUncovered<=E.INVENTORY_ATTENTION_DAYS);
+ const twentyDaily=E.inventoryCoverage(make('daily','2'),now);
+ assert.equal(twentyDaily.enough,false);
+ assert.equal(twentyDaily.status,'covered');
+ assert.ok(twentyDaily.daysUntilUncovered>E.INVENTORY_ATTENTION_DAYS);
+ const weekly=E.inventoryCoverage(make('weekly','1'),now);
+ assert.equal(weekly.status,'covered');
+ assert.equal(weekly.firstUncovered,undefined);
+});
+test('inventory status distinguishes missing, exhausted and urgent supply',()=>{
+ const now=new Date('2026-09-09T12:00:00Z');
+ const make=vials=>E.activate({id:'coverage-'+String(vials),compoundId:'tesamorelin',compoundName:'Tesamorelin',origin:null,customized:true,stages:[{id:'s1',amountMg:'1',amountUnit:'mg',weeks:'4',override:null}],defaultSchedule:{kind:'daily',days:[],times:['09:00'],interval:null},breakWeeks:'0',startDate:'2026-09-09',vialMg:'10',waterMl:'2',initialVials:vials,reviewed:true,reminderEnabled:false,reminderOffsetMinutes:0},now);
+ assert.equal(E.inventoryCoverage(make(''),now).status,'not-entered');
+ assert.equal(E.inventoryCoverage(make('0'),now).status,'out');
+ assert.equal(E.inventoryCoverage(make('0.5'),now).status,'urgent');
+});
+
+test('new blend starting references remain community-classified and non-transferable',()=>{
+ const fs=require('fs'),expanded=fs.readFileSync('./app/src/content-v04.ts','utf8'),library=fs.readFileSync('./app/src/library-v04.ts','utf8');
+ const wStart=expanded.indexOf("{id:'wolverine'"),wEnd=expanded.indexOf("{id:'klow'",wStart),w=expanded.slice(wStart,wEnd);
+ const kEnd=expanded.indexOf("{id:'melanotan-i'",wEnd),k=expanded.slice(wEnd,kEnd);
+ assert.match(w,/Community\/vendor starting reference/);assert.match(w,/amount:0\.5/);assert.match(w,/vialStrengthMg:20,diluentMl:2/);assert.match(w,/transferable:false/);
+ assert.match(k,/Community\/vendor blend reference/);assert.match(k,/amount:2/);assert.match(k,/amount:6/);assert.match(k,/vialStrengthMg:80,diluentMl:3/);assert.match(k,/transferable:false/);
+ assert.match(library,/researchPracticeReference:c\.researchPracticeReference/);
+});
+
+test('Melanotan II, kisspeptin and Semax references preserve route and transfer boundaries',()=>{
+ const fs=require('fs'),expanded=fs.readFileSync('./app/src/content-v04.ts','utf8');
+ const section=(id,next)=>expanded.slice(expanded.indexOf("{id:'"+id+"'"),next?expanded.indexOf("{id:'"+next+"'",expanded.indexOf("{id:'"+id+"'")):expanded.length);
+ const mt=section('melanotan-ii','kisspeptin');assert.match(mt,/amount:250,unit:'mcg'/);assert.match(mt,/vialStrengthMg:10,diluentMl:2/);assert.match(mt,/serious toxicity case/);assert.match(mt,/transferable:false/);
+ const kiss=section('kisspeptin','semax');assert.match(kiss,/kisspeptin-10 low pulse/);assert.match(kiss,/amount:100,unit:'mcg'/);assert.match(kiss,/not interchangeable/);assert.match(kiss,/transferable:false/);
+ const semax=section('semax','bpc-157');assert.match(semax,/Route-specific intranasal reference/);assert.match(semax,/amount:600,unit:'mcg'/);assert.match(semax,/times:\['09:00','14:00'\]/);assert.match(semax,/vialStrengthMg:null,diluentMl:null/);assert.match(semax,/transferable:false/);
+});
+
+
+test('BPC-157, TB-500 and ipamorelin references remain community-classified and non-transferable',()=>{
+ const fs=require('fs'),expanded=fs.readFileSync('./app/src/content-v04.ts','utf8');
+ const section=(id,next)=>expanded.slice(expanded.indexOf("{id:'"+id+"'"),expanded.indexOf("{id:'"+next+"'",expanded.indexOf("{id:'"+id+"'")));
+ const bpc=section('bpc-157','tb-500');assert.match(bpc,/amount:250,unit:'mcg'/);assert.match(bpc,/vialStrengthMg:10,diluentMl:2/);assert.match(bpc,/two-person human pilot used single intravenous infusions/);assert.match(bpc,/transferable:false/);
+ const tb=section('tb-500','ipamorelin');assert.match(tb,/amount:2,unit:'mg'/);assert.match(tb,/days:\[1,4\]/);assert.match(tb,/full-length thymosin beta-4/);assert.match(tb,/transferable:false/);
+ const ipa=section('ipamorelin','tesamorelin');assert.match(ipa,/amount:100,unit:'mcg'/);assert.match(ipa,/amount:200,unit:'mcg'/);assert.match(ipa,/vialStrengthMg:10,diluentMl:3/);assert.match(ipa,/intravenous administration/);assert.match(ipa,/transferable:false/);
+});
+
+
+test('tesamorelin, cagrilintide and SS-31 references preserve product and study boundaries',()=>{
+ const fs=require('fs'),expanded=fs.readFileSync('./app/src/content-v04.ts','utf8');
+ const section=(id,next)=>expanded.slice(expanded.indexOf("{id:'"+id+"'"),expanded.indexOf("{id:'"+next+"'",expanded.indexOf("{id:'"+id+"'")));
+ const t=section('tesamorelin','cagrilintide');assert.match(t,/amount:1\.28,unit:'mg'/);assert.match(t,/vialStrengthMg:11\.6,diluentMl:1\.3/);assert.match(t,/not substitutable with EGRIFTA SV/);assert.match(t,/transferable:false/);
+ const c=section('cagrilintide','5-amino-1mq');assert.match(c,/amount:0\.3,unit:'mg'/);assert.match(c,/durationWeeks:26/);assert.match(c,/vialStrengthMg:null,diluentMl:null/);assert.match(c,/transferable:false/);
+ const ss=section('ss-31','nad-plus');assert.match(ss,/amount:40,unit:'mg'/);assert.match(ss,/ready-to-use 80 mg\/mL solution/);assert.match(ss,/vialStrengthMg:null,diluentMl:null/);assert.match(ss,/transferable:false/);
+});
+
+
+test('remaining MT-I, 5-Amino-1MQ, NAD+ and MOTS-c references preserve route and species boundaries',()=>{
+ const fs=require('fs'),expanded=fs.readFileSync('./app/src/content-v04.ts','utf8');
+ const section=(id,next)=>expanded.slice(expanded.indexOf("{id:'"+id+"'"),next?expanded.indexOf("{id:'"+next+"'",expanded.indexOf("{id:'"+id+"'")):expanded.length);
+ const mt=section('melanotan-i','melanotan-ii');assert.match(mt,/0\.08 mg\/kg subcutaneously Monday through Friday/);assert.match(mt,/amount:null/);assert.match(mt,/transferable:false/);
+ const mq=section('5-amino-1mq','ss-31');assert.match(mq,/32 mg\/kg/);assert.match(mq,/vialStrengthMg:null,diluentMl:null/);assert.match(mq,/transferable:false/);
+ const nad=section('nad-plus','mots-c');assert.match(nad,/amount:750,unit:'mg'/);assert.match(nad,/6 hours at approximately 2 mg\/min/);assert.match(nad,/transferable:false/);
+ const mots=section('mots-c',null);assert.match(mots,/5 mg\/kg/);assert.match(mots,/human portion measured endogenous MOTS-c/);assert.match(mots,/transferable:false/);
+});
+
+
+test('materialized history pairs an imported completion with the nearest same-day planned dose without rewriting it',()=>{
+ const draft={id:'ss',compoundId:'ss-31',compoundName:'SS-31',origin:null,customized:true,stages:[{id:'stage',amountMg:'0.25',amountUnit:'mg',weeks:'1',override:null}],defaultSchedule:{kind:'daily',days:[],times:['09:00'],interval:null},breakWeeks:'0',startDate:'2026-09-07',vialMg:'10',waterMl:'2',initialVials:'1',reviewed:true,reminderEnabled:false,reminderOffsetMinutes:0};
+ const plan=E.activate(draft,new Date('2026-09-07T12:00:00Z'));
+ const imported={...plan.events[0],id:'import:ss31-sep7-0829',scheduledAt:'2026-09-07T08:29:00.000Z',completedAt:'2026-09-07T08:29:00.000Z',status:'completed'};
+ const rows=E.materializeEvents({...plan,events:[imported]},'2026-09-07','2026-09-07');
+ assert.equal(rows.length,1);assert.equal(rows[0].id,imported.id);assert.equal(rows[0].scheduledAt,imported.scheduledAt);
+});
+
+test('same-day reconciliation remains one-to-one for legitimate twice-daily doses',()=>{
+ const draft={id:'bpc',compoundId:'bpc-157',compoundName:'BPC-157',origin:null,customized:true,stages:[{id:'stage',amountMg:'0.25',amountUnit:'mg',weeks:'1',override:null}],defaultSchedule:{kind:'daily',days:[],times:['09:00','21:00'],interval:null},breakWeeks:'0',startDate:'2026-06-17',vialMg:'10',waterMl:'2',initialVials:'1',reviewed:true,reminderEnabled:false,reminderOffsetMinutes:0};
+ const plan=E.activate(draft,new Date('2026-06-17T12:00:00Z'));
+ const imported=plan.events.map((event,index)=>({...event,id:'import:bpc-'+index,status:'completed',completedAt:event.scheduledAt}));
+ const rows=E.materializeEvents({...plan,events:imported},'2026-06-17','2026-06-17');
+ assert.equal(rows.length,2);assert.deepEqual(rows.map(row=>row.id),['import:bpc-0','import:bpc-1']);
+});
