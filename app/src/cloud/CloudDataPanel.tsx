@@ -15,7 +15,8 @@ export type AutomaticCloudSyncState={
 const initialAutomaticState:AutomaticCloudSyncState={kind:'local',label:'Saved on this device',detail:'Sign in to use cloud sync.'};
 const automaticBaselineKey=(userId:string)=>'pepplan.cloud-sync.baseline.v1:'+userId;
 const automaticAttemptKey=(userId:string)=>'pepplan.cloud-sync.daily-attempt.v1:'+userId;
-const sameLocalDay=(left:Date,right:Date)=>left.getFullYear()===right.getFullYear()&&left.getMonth()===right.getMonth()&&left.getDate()===right.getDate();
+const automaticSuccessKey=(userId:string)=>'pepplan.cloud-sync.last-success.v1:'+userId;
+const retryDelayMs=15*60*1000;
 function readAutomaticBaseline(raw:string|null):AutomaticSyncBaseline|null{
  if(!raw)return null;
  try{const value=JSON.parse(raw);return Number.isSafeInteger(value?.revision)&&value.revision>0&&typeof value?.payload==='string'?value:null;}catch{return null;}
@@ -31,10 +32,16 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
  const set=(next:AutomaticCloudSyncState)=>{if(mounted.current)setState(next);};
  const syncNow=useCallback(async(force=false)=>{
   if(!eligible||!userId||!ready||saving||busy.current)return;
-  if(!force){const attempted=await AsyncStorage.getItem(automaticAttemptKey(userId));if(attempted&&sameLocalDay(new Date(attempted),new Date()))return;}
-  await AsyncStorage.setItem(automaticAttemptKey(userId),new Date().toISOString());
-  busy.current=true;set({kind:'checking',label:'Checking cloud…',detail:'Comparing this device with your private cloud copy.'});
+  busy.current=true;
   try{
+   const now=new Date();
+   if(!force){
+    const attemptedRaw=await AsyncStorage.getItem(automaticAttemptKey(userId));
+    const attempted=attemptedRaw?new Date(attemptedRaw):null;
+    if(attempted&&!Number.isNaN(attempted.getTime())&&now.getTime()-attempted.getTime()<retryDelayMs&&now.getTime()>=attempted.getTime())return;
+   }
+   await AsyncStorage.setItem(automaticAttemptKey(userId),now.toISOString());
+   set({kind:'checking',label:'Checking cloud…',detail:'Comparing this device with your private cloud copy.'});
    const localPayload=encodePlannerStore(current.current),row=await readCloudPlannerSnapshot();
    if(!row){set({kind:'setup',label:'Set up cloud sync',detail:'Create the first cloud copy before automatic sync begins.'});return;}
    const review=reviewSync(userId,current.current,row);
@@ -42,6 +49,7 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
    const decision=decideAutomaticSync(review.localPayload,review.cloudPayload,row.revision,baseline);
    if(decision==='bind'){
     await saveAutomaticBaseline(userId,{revision:row.revision,payload:review.cloudPayload});
+    await AsyncStorage.setItem(automaticSuccessKey(userId),new Date().toISOString());
     set({kind:'upToDate',label:'Cloud up to date',detail:'This device matches cloud revision '+row.revision+'.'});return;
    }
    if(decision==='attention'){
@@ -57,6 +65,7 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
     const verifiedReview=reviewSync(userId,current.current,verified);
     if(verifiedReview.localPayload!==verifiedReview.cloudPayload)throw Error('Cloud update could not be verified.');
     await saveAutomaticBaseline(userId,{revision,payload:verifiedReview.cloudPayload});
+    await AsyncStorage.setItem(automaticSuccessKey(userId),new Date().toISOString());
     set({kind:'upToDate',label:'Cloud up to date',detail:'Your changes are available on your other signed-in devices.'});
    }else{
     const verified=await readCloudPlannerSnapshot();
@@ -65,6 +74,7 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
     if(verifiedReview.cloudPayload!==review.cloudPayload)throw Error('Cloud data changed again. Review sync before continuing.');
     await replace.current(decodePlannerStore(review.cloudPayload));
     await saveAutomaticBaseline(userId,{revision:row.revision,payload:review.cloudPayload});
+    await AsyncStorage.setItem(automaticSuccessKey(userId),new Date().toISOString());
     set({kind:'upToDate',label:'Cloud up to date',detail:'Newer changes from another device are now on this device.'});
    }
   }catch(error){
@@ -76,18 +86,23 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
   if(!eligible||!userId||!ready||saving)return;
   let timer:ReturnType<typeof setTimeout>|null=null,cancelled=false;
   const schedule=async()=>{
-   const now=new Date(),attemptedRaw=await AsyncStorage.getItem(automaticAttemptKey(userId));
-   if(cancelled)return;
-   const attempted=attemptedRaw?new Date(attemptedRaw):null;
-   if(attempted&&!Number.isNaN(attempted.getTime())&&sameLocalDay(attempted,now))return;
-   const evening=new Date(now);evening.setHours(20,0,0,0);
-   const missedPreviousDay=!attempted||now.getTime()-attempted.getTime()>=36*60*60*1000;
-   if(now>=evening||missedPreviousDay){void syncNow();return;}
-   timer=setTimeout(()=>{void syncNow();},evening.getTime()-now.getTime());
+   if(timer){clearTimeout(timer);timer=null;}
+   try{
+    const now=new Date(),successRaw=await AsyncStorage.getItem(automaticSuccessKey(userId));
+    if(cancelled)return;
+    const success=successRaw?new Date(successRaw):null;
+    const lastSuccess=success&&!Number.isNaN(success.getTime())?success:null;
+    const evening=new Date(now);evening.setHours(20,0,0,0);
+    const previousEvening=new Date(evening);previousEvening.setDate(previousEvening.getDate()-1);
+    const due=now>=evening?(!lastSuccess||lastSuccess<evening):(!lastSuccess||lastSuccess<previousEvening);
+    if(due){void syncNow();return;}
+    timer=setTimeout(()=>{void schedule();},Math.max(1000,evening.getTime()-now.getTime()));
+   }catch{if(!cancelled)void syncNow();}
   };
   void schedule();
+  const interval=setInterval(()=>{void schedule();},retryDelayMs);
   const subscription=AppState.addEventListener('change',next=>{if(next==='active')void schedule();});
-  return()=>{cancelled=true;if(timer)clearTimeout(timer);subscription.remove();};
+  return()=>{cancelled=true;if(timer)clearTimeout(timer);clearInterval(interval);subscription.remove();};
  },[eligible,userId,ready,saving,syncNow]);
  useEffect(()=>{if(!eligible)setState(initialAutomaticState);},[eligible,userId]);
  const activate=()=>state.kind==='needsAttention'||state.kind==='setup'?attention.current():void syncNow(true);
