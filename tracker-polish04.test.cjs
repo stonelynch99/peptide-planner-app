@@ -15,7 +15,7 @@ test('inventory attention stays on affected Today cards instead of pushing the t
  assert.match(eventCard,/Inventory needs attention/);
  assert.match(eventCard,/onInventory/);
  assert.match(tracker,/inventoryAttention={inventoryAttention}/);
- assert.match(tracker,/onInventory={\(\)=>onEdit\(plan\.id,'Inventory'\)}/);
+ assert.match(tracker,/onInventory={\(\)=>\{setInventoryPlanId\(plan\.id\);setInventoryCount\(''\);setError\(''\);\}\}/);
  assert.doesNotMatch(tracker,/visibleLowSupply\.map/);
  assert.doesNotMatch(tracker,/Remind me later/);
 });
@@ -268,7 +268,7 @@ test('Today keeps yesterday unlogged doses visible and supports taken or missed 
 
 
 test('overdue review is bounded to yesterday, starts empty, and supports missed outcomes',()=>{
- assert.match(tracker,/const yesterday=addDays\(today,-1\)/);
+ assert.match(tracker,/\byesterday=addDays\(today,-1\)/);
  assert.match(tracker,/x\.event\.localDate===yesterday/);
  assert.match(tracker,/const openPast=\(\)=>\{setPastSelection\(\[\]\)/);
  assert.match(tracker,/const skipPast=\(\)=>resolvePast\('skipped'\)/);

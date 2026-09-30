@@ -2,7 +2,7 @@ require('./register-tests.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),crypto=require('crypto');
 const E=require('./app/src/engine.ts'),{compounds}=require('./app/src/content.ts');
 const pack=require('./app/src/school-content.v0.3.1.json');
-const make=()=>({...E.newDraft(compounds[0]),reviewed:true,startDate:'2026-09-07',stages:[{id:'s1',amountMg:'2',weeks:'2',override:null},{id:'s2',amountMg:'3',weeks:'2',override:null}],defaultSchedule:{kind:'weekly',days:[1],times:['09:00'],interval:null},breakWeeks:'1',vialMg:'20',waterMl:'2',initialVials:'2'});
+const make=()=>({...E.newDraft(compounds[0]),inventoryTracking:true,indefinite:false,reviewed:true,startDate:'2026-09-07',stages:[{id:'s1',amountMg:'2',weeks:'2',override:null},{id:'s2',amountMg:'3',weeks:'2',override:null}],defaultSchedule:{kind:'weekly',days:[1],times:['09:00'],interval:null},breakWeeks:'1',vialMg:'20',waterMl:'2',initialVials:'2'});
 test('authoritative 0.3.1 pack preserved byte-for-byte with all six records',()=>{
  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(__dirname+'/app/src/school-content.v0.3.1.json')).digest('hex'),'9d1af179654256fa0e2db60d3fdfe9646f5174188dcf5e1fb515a9be5f16d0e6');
  for(const raw of pack.compounds)assert.deepEqual(compounds.find(c=>c.supplied.id===raw.id).supplied,raw);
@@ -13,7 +13,7 @@ test('reference transfer retains every supplied value and never fills absent num
   assert.deepEqual(d.origin.originalReference,t.suppliedPlan);assert.deepEqual(d.origin.originalStages,t.suppliedPlan.stages);
   assert.deepEqual(d.stages.map(s=>[Number(s.amountMg),Number(s.weeks)]),t.suppliedPlan.stages.map(s=>[s.amountMg,s.durationWeeks]));
   assert.equal(d.defaultSchedule.kind,'weekly');assert.deepEqual(d.defaultSchedule.days,[6]);assert.deepEqual(d.defaultSchedule.times,['09:00']);
-  for(const key of ['breakWeeks','startDate','initialVials'])assert.equal(d[key],'');
+  assert.equal(d.breakWeeks,'0');for(const key of ['startDate','initialVials'])assert.equal(d[key],'');
  }
 });
 test('common practice copies all fields, amounts and units, without substituting missing values',()=>{
@@ -22,7 +22,7 @@ test('common practice copies all fields, amounts and units, without substituting
   assert.deepEqual(d.origin.originalReference,r);assert.deepEqual(d.origin.originalStages,r.stages);
   assert.equal(d.vialMg,String(r.vialStrengthMg));assert.equal(d.waterMl,String(r.diluentMl));assert.deepEqual(d.defaultSchedule.times,['09:00']);
   assert.deepEqual(d.stages.map(s=>[E.displayedAmount(s),s.amountUnit,s.weeks]),r.stages.map(s=>[String(s.amountMcg??s.amountMg),s.amountMcg!=null?'mcg':'mg',String(s.durationWeeks)]));
-  assert.equal(d.breakWeeks,r.plannedBreakWeeks==null?'':String(r.plannedBreakWeeks));assert.equal(d.customized,false);
+  assert.equal(d.breakWeeks,r.plannedBreakWeeks==null?'0':String(r.plannedBreakWeeks));assert.equal(d.customized,false);
   assert.deepEqual(d.origin.originalReference.sourceUrls,r.sourceUrls);
  }
 });
@@ -100,7 +100,7 @@ test('GHK weekdays and Glow rounded mass and reference draw stay distinct',()=>{
  const parts=E.glowComponents(70/3*0.1);assert.ok(Math.abs(parts[0].amountMg-5/3)<1e-10);assert.ok(Math.abs(parts[1].amountMg-1/3)<1e-10);
 });
 test('review blocks unresolved inputs and calculation rejects blank or zero values',()=>{
- const {calculate}=require('./app/src/planning.ts');const d=E.importReference(compounds[0],compounds[0].school.referenceSchedules[0]);assert.deepEqual(E.reviewChoices(d),['Choose start date','Choose planned break']);
+ const {calculate}=require('./app/src/planning.ts');const d=E.importReference(compounds[0],compounds[0].school.referenceSchedules[0]);assert.deepEqual(E.reviewChoices(d),['Choose start date']);
  for(const values of [['','2','1'],['10','','1'],['10','2',''],['10','2','0'],['0','2','1']])assert.equal(calculate(...values),null);
  Object.assign(d,{startDate:'2026-09-07',breakWeeks:'0',vialMg:'10',waterMl:'2'});assert.deepEqual(E.reviewChoices(d),[]);assert.equal(E.timeLabel('09:00'),'9:00 AM');assert.equal(E.timeLabel('21:15'),'9:15 PM');
 });
