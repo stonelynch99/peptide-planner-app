@@ -76,3 +76,13 @@ export function decideAutomaticSync(localPayload:string,cloudPayload:string,clou
  if(!localChanged&&cloudChanged)return 'download';
  return 'attention';
 }
+
+export function dailySyncSchedule(now:Date,lastSuccess:Date|null){
+ const evening=new Date(now);evening.setHours(20,0,0,0);
+ const previousEvening=new Date(evening);previousEvening.setDate(previousEvening.getDate()-1);
+ const validSuccess=lastSuccess&&Number.isFinite(lastSuccess.getTime())?lastSuccess:null;
+ const boundary=now>=evening?evening:previousEvening;
+ const due=!validSuccess||validSuccess<boundary;
+ const nextEvening=new Date(evening);if(now>=evening)nextEvening.setDate(nextEvening.getDate()+1);
+ return {due,nextCheckMs:Math.max(1000,nextEvening.getTime()-now.getTime())};
+}

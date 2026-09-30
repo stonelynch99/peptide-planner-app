@@ -77,3 +77,27 @@ test('changed 5-Amino weekday survives restart and reviewed cloud upload; dose/h
 });
 
 }
+
+const {dailySyncSchedule}=require('./app/src/cloud/planner-sync.ts');
+test('daily sync is due after the evening boundary and on next-day open',()=>{
+ assert.equal(dailySyncSchedule(new Date(2026,8,30,20,1),new Date(2026,8,29,20,1)).due,true);
+ assert.equal(dailySyncSchedule(new Date(2026,8,30,8),new Date(2026,8,29,19)).due,true);
+ assert.equal(dailySyncSchedule(new Date(2026,8,30,8),new Date(2026,8,29,20,1)).due,false);
+ assert.equal(dailySyncSchedule(new Date(2026,8,30,8),null).due,true);
+});
+test('successful evening sync waits until tomorrow rather than checking every second',()=>{
+ const timing=dailySyncSchedule(new Date(2026,8,30,21),new Date(2026,8,30,20,1));
+ assert.equal(timing.due,false);assert.equal(timing.nextCheckMs,23*60*60*1000);
+ const before=dailySyncSchedule(new Date(2026,8,30,19),new Date(2026,8,29,20,1));
+ assert.equal(before.nextCheckMs,60*60*1000);
+});
+test('confirmed identical cloud review records a common baseline for later automatic uploads',()=>{
+ const source=fs.readFileSync('app/src/cloud/CloudDataPanel.tsx','utf8');
+ assert.match(source,/if\(next.identical\)\{await saveAutomaticBaseline\(userId,\{revision:row.revision,payload:next.cloudPayload\}\)/);
+ const current=local(),cloud=row(current),review=reviewSync('one',current,cloud);
+ assert.equal(review.identical,true);
+ const baseline={revision:cloud.revision,payload:review.cloudPayload};
+ current.draft.compoundName='Synthetic edited name';
+ const changed=reviewSync('one',current,cloud);
+ assert.equal(decideAutomaticSync(changed.localPayload,changed.cloudPayload,cloud.revision,baseline),'upload');
+});

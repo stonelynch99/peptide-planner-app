@@ -4,7 +4,7 @@ import {plannerStorage as AsyncStorage} from '../store';
 import type {Store} from '../engine';
 import {decodePlannerStore,encodePlannerStore} from '../persistence-v04';
 import {confirmMigration,reviewMigration,type MigrationReview} from './planner-migration';
-import {decideAutomaticSync,downloadReviewed,reviewSync,uploadReviewed,type AutomaticSyncBaseline,type SyncReview} from './planner-sync';
+import {dailySyncSchedule,decideAutomaticSync,downloadReviewed,reviewSync,uploadReviewed,type AutomaticSyncBaseline,type SyncReview} from './planner-sync';
 import {eligibleUser,exportOwnAccount,readCloudPlannerSnapshot,saveCloudPlannerSnapshot,setDeletionRequest,uploadInitialPlannerCopy} from './client';
 import {saveLocalSafetyCopy} from './local-backup';
 
@@ -92,11 +92,9 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
     if(cancelled)return;
     const success=successRaw?new Date(successRaw):null;
     const lastSuccess=success&&!Number.isNaN(success.getTime())?success:null;
-    const evening=new Date(now);evening.setHours(20,0,0,0);
-    const previousEvening=new Date(evening);previousEvening.setDate(previousEvening.getDate()-1);
-    const due=now>=evening?(!lastSuccess||lastSuccess<evening):(!lastSuccess||lastSuccess<previousEvening);
-    if(due){void syncNow();return;}
-    timer=setTimeout(()=>{void schedule();},Math.max(1000,evening.getTime()-now.getTime()));
+    const timing=dailySyncSchedule(now,lastSuccess);
+    if(timing.due){void syncNow();return;}
+    timer=setTimeout(()=>{void schedule();},timing.nextCheckMs);
    }catch{if(!cancelled)void syncNow();}
   };
   void schedule();
@@ -121,6 +119,7 @@ export function CloudDataPanel({store,ready,userId,replaceStore,guided=false,onC
    setReview(null);setConfirmed(false);setPendingDirection(null);setShowAdvanced(false);
    if(!row){setSyncReview(null);return 'No cloud planner exists yet. Review an initial cloud copy to begin.';}
    const next=reviewSync(userId,current.current,row);setSyncReview(next);
+   if(next.identical){await saveAutomaticBaseline(userId,{revision:row.revision,payload:next.cloudPayload});await AsyncStorage.setItem(automaticSuccessKey(userId),new Date().toISOString());}
    return next.identical?'This device matches cloud revision '+next.cloudRevision+'.':'Cloud revision '+next.cloudRevision+' is available. Review both copies before choosing a direction.';
  };
  useEffect(()=>{if(ready)void run(refreshSync);},[ready,userId]);
