@@ -1,3 +1,4 @@
+import {ATTACHMENT_BUCKET,uploadFeedback,type Screenshot} from './feedback-attachments';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {createClient} from '@supabase/supabase-js';
 import {validateCloudConfig} from './config';
@@ -8,7 +9,7 @@ const client = cloudConfig.status === 'ready' ? createClient<Database>(cloudConf
 function configured() { if (!client) throw new Error('Cloud accounts are unavailable.'); return client; }
 export const authPort: AuthPort = {
   async restore(){const {data,error}=await configured().auth.getSession();if(error)throw error;return data.session?{userId:data.session.user.id}:null;},
-  async requestCode(email){const {error}=await configured().auth.signInWithOtp({email,options:{shouldCreateUser:false}});if(error)throw error;},
+  async requestCode(email){const {error}=await configured().functions.invoke('beta-request-code',{body:{email:email.trim().toLowerCase()}});if(error)throw Object.assign(Error('Code delivery could not be confirmed. Wait 60 seconds and retry.'),{code:'DELIVERY_UNAVAILABLE'});},
   async verifyCode(email,token){const {data,error}=await configured().auth.verifyOtp({email,token,type:'email'});if(error)throw error;return data.session?{userId:data.session.user.id}:null;},
   async eligible(){const {data,error}=await configured().rpc('accept_beta_invite');if(error)throw error;return data===true;},
   async signOut(){const {error}=await configured().auth.signOut({scope:'local'});if(error)throw error;},
@@ -30,10 +31,23 @@ export async function acknowledgeCloudConsent() {
   const {error}=await configured().from('consent_records').insert({user_id:userId,consent_version:CONSENT_VERSION});
   if(error&&error.code!=='23505')throw new Error('Consent could not be saved. Please retry.');
 }
-export async function submitBetaFeedback(input:FeedbackInput) {
-  const userId=await eligibleUser();
-  const {error}=await configured().from('beta_feedback').insert(feedbackRow(userId,input));
-  if(error)throw new Error('Feedback was not submitted. Confirm account consent and your invitation, then retry. Your report remains on this device.');
+export async function submitBetaFeedback(input:FeedbackInput,reportId:string,shots:Screenshot[]=[],expectedUserId?:string) {
+  const userId=await eligibleUser(),api=configured();
+  if(!expectedUserId||userId!==expectedUserId)throw Error('Account changed. Sign back into the original account before retrying this report.');
+  const row=feedbackRow(userId,input);
+  await uploadFeedback({
+    upload:async(path,file)=>{const {error}=await api.storage.from(ATTACHMENT_BUCKET).upload(path,file,{contentType:file.type,upsert:false});if(error&&String((error as any).statusCode)!=='409')throw Error('Screenshot upload failed. Keep this report open and retry; your report and screenshots are preserved.');},
+    complete:async(paths)=>{const {error}=await (api as any).rpc('submit_beta_feedback',{report_id:reportId,report:row,paths});if(error)throw Error('Feedback could not be confirmed. Keep this report open and retry; your report and screenshots are preserved.');}
+  },userId,reportId,shots);
+}
+export type ReviewedFeedback={id:string;category:string;message:string;created_at:string;attachment_paths:string[];submitter_name?:string|null;submitter_email?:string|null};
+export async function readBetaFeedback():Promise<ReviewedFeedback[]>{
+  const {data,error}=await (configured() as any).rpc('review_beta_feedback');
+  if(error)throw Error('Private feedback access denied.');return data??[];
+}
+export async function readBetaScreenshot(path:string){
+  const {data,error}=await configured().storage.from(ATTACHMENT_BUCKET).download(path);
+  if(error||!data)throw Error('Private screenshot access denied.');return URL.createObjectURL(data);
 }
 // Explicit cloud operations only; never invoked during auth or startup.
 export async function readCloudPlannerSnapshot() {

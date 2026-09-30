@@ -23,7 +23,7 @@ export class AuthController {
   }
   async request(email: string) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || email.length > 254) return 'Enter a valid email address.';
-    try { await this.port.requestCode(email.trim().toLowerCase()); } catch { /* Same message for unknown, blocked and delivery failures. */ }
+    try { await this.port.requestCode(email.trim().toLowerCase()); } catch (error) { if((error as {code?:string})?.code==='DELIVERY_UNAVAILABLE')return 'Code delivery could not be confirmed. Wait 60 seconds and retry.'; /* Unknown and ineligible addresses receive the same response. */ }
     return CODE_MESSAGE;
   }
   async verify(email: string, code: string) {

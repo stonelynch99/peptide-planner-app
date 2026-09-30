@@ -1,3 +1,5 @@
+import {FeedbackAttachments} from './src/cloud/FeedbackAttachments';
+import type {Screenshot} from './src/cloud/feedback-attachments';
 import {CloudDataPanel,useAutomaticCloudSync} from './src/cloud/CloudDataPanel';
 import {BetaAccountPanel,BetaDashboard,useBetaAccount} from './src/cloud/BetaAccount';
 import {betaAdminAccess,cloudConfig,submitBetaFeedback,setBetaAnalyticsConsent,trackBetaAnalytics} from './src/cloud/client';
@@ -130,6 +132,8 @@ function BottomNav({ active, setScreen }: { active: Screen; setScreen: (s: Scree
 export default function App() {
   const betaAccount=useBetaAccount();
   const [feedbackSubmitting,setFeedbackSubmitting]=useState(false);
+  const [feedbackShots,setFeedbackShots]=useState<Screenshot[]>([]),[feedbackSent,setFeedbackSent]=useState(false);
+  const feedbackAttempt=useRef<{id:string;userId:string;input:Parameters<typeof submitBetaFeedback>[0];shots:Screenshot[]}|null>(null);
   const {width:viewportWidth}=useWindowDimensions();
   const compactLayout=viewportWidth<600;
   const [screen, setScreen] = useState<Screen>("welcome");
@@ -579,10 +583,13 @@ export default function App() {
     }catch{setFeedbackMessage('The report was not exported. Your text remains here so you can try again.');}
   };
   const sendCloudFeedback=async()=>{
-    if(feedbackSubmitting)return;
+    if(feedbackSubmitting||feedbackSent)return;
+    if(!feedbackAttempt.current&&(!feedbackText.trim()||feedbackText.trim().length>4000)){setFeedbackMessage('Enter feedback between 1 and 4000 characters.');return;}
     setFeedbackSubmitting(true);
     try{
-      await submitBetaFeedback({category:feedbackType,message:feedbackText,origin:feedbackOrigin,platform:Platform.OS,browser:'Other',includePlanDetails:feedbackIncludePlans,activePeptideNames:feedbackIncludePlans?plans.map(plan=>plan.compoundName):undefined});
+      if(!feedbackAttempt.current)feedbackAttempt.current={id:crypto.randomUUID(),userId:betaAccount.state.userId!,input:{category:feedbackType,message:feedbackText,origin:feedbackOrigin,platform:Platform.OS,browser:'Other',includePlanDetails:feedbackIncludePlans,activePeptideNames:feedbackIncludePlans?plans.map(plan=>plan.compoundName):undefined},shots:[...feedbackShots]};
+      await submitBetaFeedback(feedbackAttempt.current.input,feedbackAttempt.current.id,feedbackAttempt.current.shots,feedbackAttempt.current.userId);
+      setFeedbackSent(true);
       setFeedbackMessage('Feedback submitted privately. Your planner data was not uploaded.');
       if(analyticsConsent===true)void trackBetaAnalytics('feedback_submitted');
     }catch(error){setFeedbackMessage(error instanceof Error?error.message:'Feedback was not submitted. Your report remains here.');}
@@ -603,7 +610,7 @@ export default function App() {
     <Pressable accessibilityRole="button" onPress={()=>setScreen(feedbackOrigin==='Community'?'school':'more')}><Text style={styles.back}>‹ Back</Text></Pressable>
     <Text style={styles.kicker}>PRIVATE BETA FEEDBACK</Text><Text style={styles.detailTitle}>Help improve EZPep Planner</Text><Text style={styles.detailMeta}>Report a problem, confusing step, suggestion or calculation concern.</Text>
     <View style={styles.notice}><Text style={styles.noticeText}>Your plans and history are not included automatically. You can download a private report, or submit it from an eligible beta account after saving account consent. Avoid including sensitive information in your message.</Text></View>
-    <View style={styles.lessonCard}><Text style={styles.lessonTitle}>What kind of feedback is this?</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{(['Bug','Confusing','Suggestion','Calculation concern'] as const).map(type=><Pressable key={type} accessibilityRole="radio" accessibilityState={{checked:feedbackType===type}} onPress={()=>setFeedbackType(type)} style={[styles.schoolFilter,feedbackType===type&&styles.schoolFilterActive]}><Text style={[styles.schoolFilterText,feedbackType===type&&styles.schoolFilterTextActive]}>{type}</Text></Pressable>)}</View><Text style={[styles.inputLabel,{marginTop:16}]}>What happened or what would help?</Text><TextInput accessibilityLabel="Beta feedback details" multiline value={feedbackText} onChangeText={value=>{setFeedbackText(value);setFeedbackMessage('');}} placeholder="Describe the screen, action and result…" style={[styles.smallInput,{minHeight:140,textAlignVertical:'top'}]}/><Pressable accessibilityRole="checkbox" accessibilityState={{checked:feedbackIncludePlans}} onPress={()=>setFeedbackIncludePlans(value=>!value)} style={styles.notice}><Text style={styles.noticeText}>{feedbackIncludePlans?'✓':'○'} Include active peptide names in this report</Text></Pressable>{!!feedbackMessage&&<Text accessibilityLiveRegion="polite" style={styles.helper}>{feedbackMessage}</Text>}<AppButton label={Platform.OS==='web'?'Download private feedback report':'Share private feedback report'} onPress={()=>{void exportBetaFeedback();}}/>{betaAccount.state.status==='eligible'&&<><AppButton label="Submit private beta feedback" disabled={feedbackSubmitting} onPress={()=>{void sendCloudFeedback();}}/><AppButton label="Review account consent" secondary onPress={()=>setScreen('profile')}/></>}<AppButton label="Clear feedback form" secondary onPress={()=>{setFeedbackText('');setFeedbackIncludePlans(false);setFeedbackMessage('Form cleared.');}}/></View>
+    <View style={styles.lessonCard}><Text style={styles.lessonTitle}>What kind of feedback is this?</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{(['Bug','Confusing','Suggestion','Calculation concern'] as const).map(type=><Pressable key={type} accessibilityRole="radio" accessibilityState={{checked:feedbackType===type}} disabled={!!feedbackAttempt.current} onPress={()=>setFeedbackType(type)} style={[styles.schoolFilter,feedbackType===type&&styles.schoolFilterActive]}><Text style={[styles.schoolFilterText,feedbackType===type&&styles.schoolFilterTextActive]}>{type}</Text></Pressable>)}</View><Text style={[styles.inputLabel,{marginTop:16}]}>What happened or what would help?</Text><TextInput accessibilityLabel="Beta feedback details" editable={!feedbackAttempt.current} multiline value={feedbackText} onChangeText={value=>{setFeedbackText(value);setFeedbackMessage('');}} placeholder="Describe the screen, action and result…" style={[styles.smallInput,{minHeight:140,textAlignVertical:'top'}]}/><Pressable accessibilityRole="checkbox" accessibilityState={{checked:feedbackIncludePlans}} disabled={!!feedbackAttempt.current} onPress={()=>setFeedbackIncludePlans(value=>!value)} style={styles.notice}><Text style={styles.noticeText}>{feedbackIncludePlans?'✓':'○'} Include active peptide names in this report</Text></Pressable><FeedbackAttachments shots={feedbackShots} onChange={setFeedbackShots} onError={setFeedbackMessage} disabled={!!feedbackAttempt.current||feedbackSubmitting}/>{!!feedbackMessage&&<Text accessibilityLiveRegion="polite" style={styles.helper}>{feedbackMessage}</Text>}<AppButton label={Platform.OS==='web'?'Download private feedback report':'Share private feedback report'} onPress={()=>{void exportBetaFeedback();}}/>{betaAccount.state.status==='eligible'&&<><AppButton label={feedbackSent?"Feedback submitted":feedbackAttempt.current?"Retry private feedback":"Submit private beta feedback"} disabled={feedbackSubmitting||feedbackSent} onPress={()=>{void sendCloudFeedback();}}/><AppButton label="Review account consent" secondary onPress={()=>setScreen('profile')}/></>}<AppButton label="Clear feedback form" secondary disabled={feedbackSubmitting||!!feedbackAttempt.current&&!feedbackSent} onPress={()=>{feedbackShots.forEach(x=>URL.revokeObjectURL(x.preview));setFeedbackShots([]);feedbackAttempt.current=null;setFeedbackSent(false);setFeedbackText('');setFeedbackIncludePlans(false);setFeedbackMessage('Form cleared.');}}/></View>
   </ScrollView>;
 
   const renderMore = () => {
