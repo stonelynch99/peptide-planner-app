@@ -28,7 +28,7 @@ export class Store {
  else if(kind==='referral'){const {rate_bps,window_days,renewal_months,payout_terms}=input;if(!Number.isInteger(rate_bps)||rate_bps<0||rate_bps>10000||!Number.isInteger(window_days)||window_days<1||window_days>365||!Number.isInteger(renewal_months)||renewal_months<1||renewal_months>120||typeof payout_terms!=='string'||payout_terms.length>500)throw Error('INVALID_REFERRAL_TERMS');const v=this.get('SELECT max(version) v FROM terms').v+1;this.run('INSERT INTO terms VALUES(?,?,?,?,?,?,0)',v,Date.now(),rate_bps,window_days,renewal_months,payout_terms);}
  else throw Error('FIXED_CONFIG_ONLY');this.run('UPDATE settings SET revision=revision+1 WHERE id=1');return {saved:'draft',...this.settings()};});}
  reserve(user,promo=null){return this.tx(()=>{const old=this.get("SELECT * FROM attempts WHERE user_id=? AND state IN ('reserved','open','uncertain','paid')",user);if(old)return old;
- if(promo){const n=this.get("SELECT count(*) n FROM attempts WHERE promo_version=? AND state IN ('reserved','open','uncertain','paid')",promo.version).n;if(n>=promo.cap)throw Error('PROMO_CAPACITY_RESERVED');}
+ if(promo){const n=this.get("SELECT count(*) n FROM attempts WHERE promo_version=? AND state IN ('reserved','open','uncertain','paid','archived')",promo.version).n;if(n>=promo.cap)throw Error('PROMO_CAPACITY_RESERVED');}
  const id=randomUUID();this.run('INSERT INTO attempts(id,user_id,state,promo_version,created_at) VALUES(?,?,?,?,?)',id,user,'reserved',promo?.version??null,Date.now());return this.get('SELECT * FROM attempts WHERE id=?',id);});}
  expire(id,verifiedState){if(!['expired','incomplete_expired','canceled'].includes(verifiedState))throw Error('STRIPE_TERMINAL_REQUIRED');this.run("UPDATE attempts SET state='released' WHERE id=? AND state!='paid'",id);}
  claim(name,now=Date.now()){return this.tx(()=>{const old=this.get('SELECT * FROM locks WHERE name=?',name);if(old&&old.until_at>now)throw Error('RETRY_BUSY');const token=randomUUID();this.run('INSERT INTO locks VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET token=excluded.token,until_at=excluded.until_at',name,token,now+120000);return token;});}
@@ -52,6 +52,7 @@ export class Store {
  this.run("UPDATE attempts SET state='paid',subscription_id=? WHERE id=?",snapshot.subscription_id,attempt.id);
  }
  this.run('INSERT INTO subscriptions VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,paid_until=excluded.paid_until,refunded=excluded.refunded,snapshot_at=excluded.snapshot_at',snapshot.subscription_id,snapshot.user_id,snapshot.customer_id,snapshot.status,paidUntil,fullRefund,Date.now());
+ if(['incomplete_expired','canceled'].includes(snapshot.status))this.run("UPDATE attempts SET state='released' WHERE id=? AND state!='paid'",attempt.id);
  this.run('INSERT INTO events VALUES(?,?,?)',event.id,event.hash,Date.now());return {verified:true};});}
  membership(user,now=Date.now()){const s=this.all('SELECT * FROM subscriptions WHERE user_id=?',user);return {pro:s.some(x=>x.paid_until>now&&!x.refunded&&['active','past_due'].includes(x.status)),beta_access:'unchanged',planner_data:'unchanged'};}
 }
