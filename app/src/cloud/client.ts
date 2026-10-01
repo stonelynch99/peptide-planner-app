@@ -159,3 +159,13 @@ export async function callReminderBackend(expectedUserId:string,body:Record<stri
  if(data?.error)throw Object.assign(Error(data.error),{code:data.error});
  return data;
 }
+
+// Fixed EZPep-only TEST service. Supabase session remains in its existing storage.
+export async function callMembership(expectedUserId:string,operation:'status'|'checkout'|'portal') {
+ const {data,error}=await configured().auth.getSession();
+ if(error||data.session?.user.id!==expectedUserId)throw Error('Sign in to the original account.');
+ const response=await fetch('https://builder-pepplan.aurapep.ca/ezpep-membership-test/'+operation,{method:'POST',headers:{authorization:'Bearer '+data.session.access_token,'content-type':'application/json'},body:'{}',redirect:'error',signal:AbortSignal.timeout(25000)});
+ const result=await response.json();
+ if(!response.ok)throw Error(result.error==='BILLING_DISABLED'?'Owner test checkout is disabled.':result.error==='TEST_ACCOUNT_REQUIRED'?'This account is not enabled for subscription testing.':'Membership request could not finish. Refresh status before retrying.');
+ return result;
+}

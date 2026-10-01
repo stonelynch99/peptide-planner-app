@@ -10,7 +10,7 @@ export function handler(store,config,fetcher=fetch){const stripe=new StripeTest(
  // No sign-up or invitation mutation: eligibility read only.
  const beta=await fetcher(PROJECT+'/rest/v1/rpc/beta_access',{method:'POST',headers:{authorization:request.headers.get('authorization'),apikey:config.publishable,'content-type':'application/json'},body:'{}',redirect:'error'});if(!beta.ok||await beta.json()!==true)return reply(403,{error:'BETA_ACCESS_REQUIRED'});
  const input=JSON.parse(raw||'{}');if(path==='/membership/referral'){if(!input||Object.keys(input).join()!=='code')return reply(400,{error:'CODE_ONLY'});return reply(200,store.attribute(user,input.code));}if(!input||Array.isArray(input)||Object.keys(input).length)return reply(400,{error:'NO_CUSTOMER_FIELDS_ACCEPTED'});
- if(path==='/membership/status')return reply(200,store.membership(user));
+ if(path==='/membership/status')return reply(200,{...store.membership(user),test_account:config.testUsers?.includes(user)===true,test_checkout_enabled:config.testUsers?.includes(user)===true&&config.testCheckoutEnabled===true,mode:'test'});
  // Test checkout restricted to exact synthetic Auth IDs installed privately by owner.
  if(!config.testUsers?.includes(user))return reply(403,{error:'TEST_ACCOUNT_REQUIRED'});
  if(path==='/membership/checkout')return reply(200,await service.checkout(user,{testEnabled:config.testCheckoutEnabled===true}));

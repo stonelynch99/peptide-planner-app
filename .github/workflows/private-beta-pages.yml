@@ -43,7 +43,9 @@ jobs:
         run: npm ci
       - name: Export protected web application
         working-directory: app
-        run: npx expo export --platform web
+        run: |
+          npx expo export --platform web
+          node ../scripts/stamp-web-release.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

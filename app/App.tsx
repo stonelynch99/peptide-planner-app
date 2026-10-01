@@ -1,3 +1,5 @@
+import MembershipPanel from './src/cloud/MembershipPanel';
+import {useQuietRelease} from './src/quiet-release';
 import {Card,u} from './src/ui';
 import ReminderPanel from './src/reminder-panel';
 import {enableActivePlanReminders} from './src/reminder-projection';
@@ -136,6 +138,8 @@ function BottomNav({ active, setScreen }: { active: Screen; setScreen: (s: Scree
 
 export default function App() {
   const betaAccount=useBetaAccount();
+  const [membershipOpen,setMembershipOpen]=useState(Platform.OS==='web'&&window.location.hash==='#membership');
+  useEffect(()=>{if(Platform.OS!=='web')return;const changed=()=>setMembershipOpen(window.location.hash==='#membership');window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed);},[]);
   const [feedbackSubmitting,setFeedbackSubmitting]=useState(false);
   const [feedbackShots,setFeedbackShots]=useState<Screenshot[]>([]),[feedbackSent,setFeedbackSent]=useState(false);
   const feedbackAttempt=useRef<{id:string;userId:string;input:Parameters<typeof submitBetaFeedback>[0];shots:Screenshot[]}|null>(null);
@@ -787,6 +791,8 @@ export default function App() {
     </ScrollView>
   );
 
+  useQuietRelease(saved.ready&&!saved.loadFailed&&!saved.error&&!saved.saving&&betaAccount.state.status==='eligible'&&cloudSync.state.kind==='upToDate'&&!saved.store.draft&&!saved.store.activeEdit&&!currentEdit&&!editingActive&&!feedbackSubmitting&&!feedbackBusy.current&&!feedbackText&&!feedbackShots.length&&!feedbackPending.length&&!importing&&!importPreview&&!restoreCandidate&&!restoringBackup&&!cloudGuideOpen&&!membershipOpen&&['tracker','plans','more','school'].includes(screen),betaAccount.state.userId??null,saved.store);
+
   if(!saved.ready)return <SafeAreaProvider><SafeAreaView style={styles.safe}><Text style={styles.detailTitle}>Opening your saved plan…</Text></SafeAreaView></SafeAreaProvider>;
   if(saved.loadFailed)return <SafeAreaProvider><SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.welcomeContent}>
     <View style={styles.welcomeBrand}><Image accessibilityLabel="EZPep Planner" source={{uri:EZPEP_LOCKUP_DATA_URI}} resizeMode="contain" style={styles.welcomeBrandImage}/></View>
@@ -798,6 +804,7 @@ export default function App() {
     {restoreCandidate&&<Modal transparent animationType="fade" onRequestClose={()=>{if(!restoringBackup)setRestoreCandidate(null);}}><View style={styles.importModalShade}><View style={styles.importModalCard}><Text style={styles.sourceClass}>{restoreStatus.startsWith('Backup restored successfully')?'RESTORE COMPLETE':'RESTORE PREVIEW'}</Text><Text style={styles.importModalTitle}>{restoreStatus.startsWith('Backup restored successfully')?'Backup restored':'Replace the unreadable planner data?'}</Text><Text style={styles.nextText}>{restoreCandidate.plans} active plans · {restoreCandidate.archives} archived plans · {restoreCandidate.history} saved history entries</Text><View style={styles.restoreDates}><Text style={styles.smallBadge}>File: {restoreCandidate.fileName}</Text><Text style={styles.smallBadge}>Backup file saved: {backupDateLabel(restoreCandidate.fileSavedAt)}</Text><Text style={styles.smallBadge}>Latest planner activity in backup: {backupDateLabel(restoreCandidate.plannerUpdatedAt)}</Text></View>{!!restoreStatus&&<Text accessibilityLiveRegion="polite" style={restoreStatus.startsWith('Backup was not')?styles.restoreError:styles.restoreGood}>{restoreStatus}</Text>}{restoreStatus.startsWith('Backup restored successfully')?<AppButton label="View restored planner" onPress={()=>{setRestoreCandidate(null);setRestoreStatus('');setScreen('plans');}}/>:<><Text style={styles.smallBadge}>The validated backup becomes active only after confirmation. A single local safety copy is retained without filling browser storage with duplicate backups.</Text><AppButton label={restoringBackup?'Restoring backup…':'Confirm restore backup'} disabled={restoringBackup} onPress={restoreLocalBackup}/><AppButton label="Cancel restore" disabled={restoringBackup} secondary onPress={()=>{setRestoreCandidate(null);setRestoreStatus('');}}/></>}</View></View></Modal>}
   </ScrollView></SafeAreaView></SafeAreaProvider>;
   if(betaAccount.state.status!=='eligible')return <SafeAreaProvider><SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled"><BetaAccountPanel account={betaAccount}/><AppButton label="Export local backup" secondary onPress={exportLocalBackup}/><Text style={styles.smallBadge}>Your local data is preserved while account access is checked. Backup recovery remains available if saved data cannot be opened.</Text></ScrollView></SafeAreaView></SafeAreaProvider>;
+  if(membershipOpen&&Platform.OS==='web')return <SafeAreaProvider><SafeAreaView style={styles.safe}><ScrollView><MembershipPanel userId={betaAccount.state.userId!} onClose={()=>{window.history.replaceState(null,'',window.location.pathname);setMembershipOpen(false);}}/></ScrollView></SafeAreaView></SafeAreaProvider>;
   return (
     <SafeAreaProvider><SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
