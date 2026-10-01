@@ -1,3 +1,5 @@
+import ReminderPanel from './src/reminder-panel';
+import {setReminderAccount} from './src/reminder-browser';
 import {FeedbackAttachments} from './src/cloud/FeedbackAttachments';
 import type {Screenshot} from './src/cloud/feedback-attachments';
 import {CloudDataPanel,useAutomaticCloudSync} from './src/cloud/CloudDataPanel';
@@ -361,10 +363,11 @@ export default function App() {
     return()=>web.removeEventListener('popstate',back);
   },[screen]);
   useEffect(()=>{
-    if(!saved.ready||saved.loadFailed)return;
-    let mounted=true;const sync=()=>reconcileReminders(plans).then(()=>{if(mounted)setReminderError("");}).catch(e=>{if(mounted)setReminderError("Reminders need attention. Open More → Reminders. "+String(e));});
-    sync();const sub=AppState.addEventListener("change",state=>{if(state==="active")sync();});return()=>{mounted=false;sub.remove();};
-  },[saved.ready,saved.store.activePlans,saved.loadFailed]);
+    setReminderAccount(betaAccount.state.status==='eligible'?betaAccount.state.userId??null:null);
+    if(!saved.ready||saved.loadFailed||saved.saving||saved.error)return;
+    let mounted=true;const sync=()=>reconcileReminders(plans,saved.store.archives).then(()=>{if(mounted)setReminderError("");}).catch(e=>{if(mounted)setReminderError("Reminders need attention. Open More → Reminders. "+String(e));});
+    sync();const timer=setInterval(sync,60000);const sub=AppState.addEventListener("change",state=>{if(state==="active")sync();});return()=>{mounted=false;clearInterval(timer);sub.remove();};
+  },[saved.ready,saved.store.activePlans,saved.store.active,saved.store.archives,saved.loadFailed,saved.saving,saved.error,betaAccount.state.status,betaAccount.state.userId]);
   useEffect(()=>listenForReminder((planId)=>{if(planId)setSelectedPlanId(planId);setScreen("tracker");}),[]);
   useEffect(()=>{
     if(!saved.ready||screen!=="welcome"||onboarding===undefined||restartingOnboarding)return;
@@ -802,7 +805,8 @@ export default function App() {
         {screen==='tracker'&&!plans.length&&!saved.loadFailed&&renderStartHere()}
         {(screen==='history'||(screen==='tracker'&&!!plans.length))&&!saved.loadFailed&&<AggregateTracker plans={plans} archives={saved.store.archives} update={saved.update} initialTab={screen==='history'?'History':'Today'} onOpen={openPlan} onEdit={editPlan}/>}
         {screen==='inventory'&&!saved.loadFailed&&<MyPlans inventory store={saved.store} update={saved.update} onOpen={id=>editPlan(id,'Inventory')} onEdit={editPlan} onHistory={id=>{setSelectedPlanId(id);setScreen('planHistory');}} onDraft={()=>setScreen('review')} onGuide={()=>setScreen('guide')}/>}
-        {(["plan","planDetail","planInventory","review","schedule","calc","planTracker","planHistory","reminders"] as Screen[]).includes(screen) && !saved.loadFailed && <Workspace screen={(screen==='planDetail'?'plan':screen==='planInventory'?'inventory':screen==='planTracker'?'tracker':screen==='planHistory'?'history':screen) as any} navigate={workspaceNavigate} store={scopedStore} update={scopedUpdate} editing={editing?{onSave:saveActiveEdits,supply:currentEdit!.supplyVials,onSupplyChange:value=>persistEdit({...currentEdit!,supplyVials:value}).catch(()=>{})}:undefined} onStarted={()=>setScreen("plans")} onDiscard={editing?discardActiveEdits:async()=>{const compound=compounds.find(c=>c.id===saved.store.draft?.compoundId);await saved.update(old=>({...old,draft:null}));if(compound)setSelected(compound);setScreen("detail");}} onGuide={()=>setScreen("guide")}/>}
+        {screen==='reminders'&&Platform.OS==='web'&&!saved.loadFailed&&<ReminderPanel plans={plans} archives={saved.store.archives}/>}
+        {(["plan","planDetail","planInventory","review","schedule","calc","planTracker","planHistory",...(Platform.OS!=='web'?['reminders']:[])] as Screen[]).includes(screen) && !saved.loadFailed && <Workspace screen={(screen==='planDetail'?'plan':screen==='planInventory'?'inventory':screen==='planTracker'?'tracker':screen==='planHistory'?'history':screen) as any} navigate={workspaceNavigate} store={scopedStore} update={scopedUpdate} editing={editing?{onSave:saveActiveEdits,supply:currentEdit!.supplyVials,onSupplyChange:value=>persistEdit({...currentEdit!,supplyVials:value}).catch(()=>{})}:undefined} onStarted={()=>setScreen("plans")} onDiscard={editing?discardActiveEdits:async()=>{const compound=compounds.find(c=>c.id===saved.store.draft?.compoundId);await saved.update(old=>({...old,draft:null}));if(compound)setSelected(compound);setScreen("detail");}} onGuide={()=>setScreen("guide")}/>}
       </View>
       {screen!=="welcome"&&<BottomNav active={screen==='activeEditor'?(currentEdit?.returnTo??'plans'):screen} setScreen={setScreen} />}
     </SafeAreaView></SafeAreaProvider>

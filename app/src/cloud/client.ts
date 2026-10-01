@@ -142,3 +142,17 @@ export async function trackBetaAnalytics(eventName:BetaAnalyticsEvent,screen?:st
   const {error}=await api.from('beta_analytics_events').insert({user_id:userId,event_name:eventName,screen:screen??null,duration_seconds:duration});
   return !error;
 }
+
+export async function callReminderBackend(expectedUserId:string,body:Record<string,unknown>){
+ const api=configured();
+ const {data:session,error:sessionError}=await api.auth.getSession();
+ if(sessionError||session.session?.user.id!==expectedUserId)throw Object.assign(Error('Sign in to the original reminder account.'),{code:'UNAUTHORIZED'});
+ const {data,error}=await api.functions.invoke('ezpep-reminders',{body,headers:{Authorization:'Bearer '+session.session.access_token}});
+ if(error){
+  let code='BACKEND_UNAVAILABLE';
+  try{const response=(error as any).context;if(response?.json)code=(await response.json()).error||code;}catch{}
+  throw Object.assign(Error(code),{code});
+ }
+ if(data?.error)throw Object.assign(Error(data.error),{code:data.error});
+ return data;
+}
