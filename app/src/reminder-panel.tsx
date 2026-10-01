@@ -11,13 +11,6 @@ export default function ReminderPanel({plans,archives,onEnableAll}:{plans:SavedP
  return <ScrollView contentContainerStyle={{padding:20,gap:16}}>
  <Text style={u.title}>Notifications</Text>
  <Text style={u.body}>Choose this device to receive reminders while EZPep is closed. Notifications use generic text. Only reminder timing and identifiers are sent; planner backups keep their separate schedule.</Text>
- <Card><Text style={u.heading}>Add EZPep to your Home Screen</Text>
- <Text style={u.body}>Keep EZPep one tap away, like an app.</Text>
- <Text style={u.heading}>Android · Chrome</Text>
- <Text style={u.body}>Open app.ezpepplanner.com in Chrome. Open the three-dot menu and choose “Install app” or “Add to Home screen”, then follow the prompts. The wording depends on your browser.</Text>
- <Text style={u.heading}>iPhone · Safari</Text>
- <Text style={u.body}>Open app.ezpepplanner.com in Safari. Tap Share, then “Add to Home Screen” and Add. If needed, scroll the Share menu to find it. Open EZPep from the new Home Screen icon before setting up notifications.</Text>
- <Text style={u.small}>On the Home Screen app, sign in to the same account and check that your latest plans are visible. Then turn on active-peptide reminders, set up this device and send one test notification. Leave the app and lock your phone to check delivery.</Text></Card>
  <Card><Text style={u.heading}>{status?.dispatch_enabled?'Delivery activated':'Delivery is not activated yet'}</Text>
  <Text style={u.body}>{status?.local_enabled?'This device is set up.':'This device is not set up.'}</Text>
  {status?.preferred_device_id&&<Text style={u.small}>{status.preferred_device_id===status.device_id?'This is your preferred notification device.':'Another device is preferred. Setting up this device will move reminders here.'}</Text>}

@@ -1,3 +1,4 @@
+import {Card,u} from './src/ui';
 import ReminderPanel from './src/reminder-panel';
 import {enableActivePlanReminders} from './src/reminder-projection';
 import {setReminderAccount} from './src/reminder-browser';
@@ -58,7 +59,7 @@ import {decodePlannerStore,encodePlannerStore,previewPeptideLibraryCsv,externalS
 type Experience = "new" | "familiar" | "experienced";
 type FirstGoal = "learn" | "research" | "setup" | "track";
 type OnboardingProfile = { experience: Experience; goal: FirstGoal };
-type Screen = "welcome" | "activeEditor" | "profile" | "settings" | "betaFeedback" | "betaPrivacy" | "betaDashboard" | "shop" | "plans" | "planInventory" | "planDetail" | "planTracker" | "planHistory" | "school" | "schoolDetail" | "schoolMore" | "schoolSources" | "guide" | "detail" | "plan" | "calc" | "tracker" | "review" | "schedule" | "inventory" | "reminders" | "history" | "dataImport" | "more";
+type Screen = "homeScreen" | "welcome" | "activeEditor" | "profile" | "settings" | "betaFeedback" | "betaPrivacy" | "betaDashboard" | "shop" | "plans" | "planInventory" | "planDetail" | "planTracker" | "planHistory" | "school" | "schoolDetail" | "schoolMore" | "schoolSources" | "guide" | "detail" | "plan" | "calc" | "tracker" | "review" | "schedule" | "inventory" | "reminders" | "history" | "dataImport" | "more";
 
 const COLORS = {
   ink: "#0E1C4A",
@@ -119,7 +120,7 @@ function BottomNav({ active, setScreen }: { active: Screen; setScreen: (s: Scree
   return (
     <View testID="bottom-navigation" style={styles.nav}>
       {items.map((item) => {
-        const tab = active === "schoolDetail" || active === "schoolMore" || active === "schoolSources" ? "school" : active === "detail" ? "guide" : ["plan", "planDetail", "planInventory", "calc", "review", "schedule"].includes(active) ? "plans" : ["history","planTracker","planHistory"].includes(active) ? "tracker" : ["inventory", "reminders","profile","settings"].includes(active) ? "more" : active;
+        const tab = active === "schoolDetail" || active === "schoolMore" || active === "schoolSources" ? "school" : active === "detail" ? "guide" : ["plan", "planDetail", "planInventory", "calc", "review", "schedule"].includes(active) ? "plans" : ["history","planTracker","planHistory"].includes(active) ? "tracker" : ["inventory", "reminders","profile","settings","homeScreen"].includes(active) ? "more" : active;
         const isActive = tab === item.key;
         return (
           <Pressable accessibilityRole="tab" accessibilityLabel={item.label} accessibilityState={{ selected: isActive }} key={item.key} onPress={() => setScreen(item.key)} style={styles.navItem}>
@@ -633,6 +634,7 @@ export default function App() {
     if(betaAdmin)rows.splice(2,0,{label:"Beta Dashboard",detail:"Owner-only tester access and aggregate usage",target:"betaDashboard"});
     return <ScrollView contentContainerStyle={styles.scrollContent}>
       <Text style={[styles.kicker, { marginTop: 20 }]}>MORE</Text><Text style={styles.detailTitle}>Your EZPep Planner</Text><Text style={styles.detailMeta}>Account, reminders, preferences and support.</Text>
+      <View style={[styles.lessonCard,{backgroundColor:COLORS.paleBlue,borderColor:COLORS.blue}]}><Text style={styles.sourceClass}>ONE-TAP ACCESS</Text><Text style={styles.lessonTitle}>EZPep on your Home Screen</Text><Text style={styles.nextText}>Open your planner like an app. Follow the steps for Android or iPhone.</Text><AppButton label="Add EZPep to Home Screen" onPress={()=>setScreen("homeScreen")}/></View>
       <View style={styles.lessonCard}><Text style={styles.sourceClass}>CLOUD BACKUP & DEVICES</Text><Text style={styles.lessonTitle}>Quiet daily protection.</Text><Text style={styles.nextText}>EZPep saves changes on this device immediately and checks the private cloud once each evening. If the app was closed, it catches up the next time you open it. Use the controls here only when moving to another device or reviewing a sync issue.</Text><AppButton label="Cloud backup and device transfer" onPress={()=>setCloudGuideOpen(true)}/><AppButton label="View account" secondary onPress={()=>setScreen("profile")}/></View>
       {rows.map(row=><Pressable accessibilityRole="button" accessibilityLabel={row.label} disabled={!row.target} key={row.label} style={styles.moreRow} onPress={()=>row.target&&(row.target==='betaFeedback'?openBetaFeedback('More'):setScreen(row.target))}><View style={{flex:1}}><Text style={styles.planOptionTitle}>{row.label}</Text><Text style={styles.smallBadge}>{row.detail}</Text></View><Text style={styles.linkArrow}>{row.target?'›':'·'}</Text></Pressable>)}
       <View style={styles.notice}><Text style={styles.noticeText}>Prototype 0.4 · plans save on this device first. Signed-in accounts receive one quiet cloud backup check per day, normally around 8:00 PM local time or after the next app opening if that check was missed.</Text></View>
@@ -794,6 +796,14 @@ export default function App() {
         {screen === "schoolMore" && renderSchoolDetail(true)}
         {screen === "schoolSources" && renderSources()}
         {screen === "more" && renderMore()}
+         {screen==="homeScreen"&&<ScrollView contentContainerStyle={styles.scrollContent}><Pressable accessibilityRole="button" onPress={()=>setScreen("more")}><Text style={styles.back}>‹ More</Text></Pressable> <Card><Text style={u.heading}>Add EZPep to your Home Screen</Text>
+ <Text style={u.body}>Keep EZPep one tap away, like an app.</Text>
+ <Text style={u.heading}>Android · Chrome</Text>
+ <Text style={u.body}>Open app.ezpepplanner.com in Chrome. Open the three-dot menu and choose “Install app” or “Add to Home screen”, then follow the prompts. The wording depends on your browser.</Text>
+ <Text style={u.heading}>iPhone · Safari</Text>
+ <Text style={u.body}>Open app.ezpepplanner.com in Safari. Tap Share, then “Add to Home Screen” and Add. If needed, scroll the Share menu to find it. Open EZPep from the new Home Screen icon before setting up notifications.</Text>
+ <Text style={u.small}>On the Home Screen app, sign in to the same account and check that your latest plans are visible. Then turn on active-peptide reminders, set up this device and send one test notification. Leave the app and lock your phone to check delivery.</Text></Card>
+<AppButton label="Open Notifications" secondary onPress={()=>setScreen("reminders")}/></ScrollView>}
          {screen === "betaFeedback" && renderBetaFeedback()}
          {screen === "betaPrivacy" && renderBetaPrivacy()}
          {screen === "betaDashboard" && betaAdmin && <BetaDashboard onBack={()=>setScreen("more")}/>}
