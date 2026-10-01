@@ -1,6 +1,6 @@
 import {FeedbackReview} from './FeedbackReview';
 import React,{useEffect,useMemo,useState} from 'react';
-import {AppState,Image,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {AppState,Image,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {EZPEP_LOCKUP_DATA_URI} from '../brand-assets';
 import {AuthController} from './auth-controller';
 import {acknowledgeCloudConsent,authPort,cloudConfig,readBetaAdminDashboard,type BetaAdminUser} from './client';
@@ -13,10 +13,11 @@ export function useBetaAccount(){
 }
 export function BetaAccountPanel({account}:{account:ReturnType<typeof useBetaAccount>}){
  const {state,controller}=account;
- const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[confirmation,setConfirmation]=useState(''),[code,setCode]=useState(''),[name,setName]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[codeMode,setCodeMode]=useState(false),[security,setSecurity]=useState(false),[consent,setConsent]=useState(false),[nextRequest,setNextRequest]=useState(0);
+ const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[confirmation,setConfirmation]=useState(''),[code,setCode]=useState(''),[name,setName]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[codeMode,setCodeMode]=useState(false),[security,setSecurity]=useState(false),[passwordStep,setPasswordStep]=useState<'send'|'code'|'password'|'done'>('send'),[passwordMessage,setPasswordMessage]=useState(''),[consent,setConsent]=useState(false),[nextRequest,setNextRequest]=useState(0);
  useEffect(()=>{setPassword('');setConfirmation('');setCode('');setName(state.displayName||'');setConsent(false);},[state.userId,state.displayName]);
- useEffect(()=>{if(state.recovery)setSecurity(true);},[state.recovery]);
+ useEffect(()=>{if(state.recovery){setSecurity(true);setPasswordStep('password');}},[state.recovery]);
  const run=async(action:()=>Promise<string|void>)=>{if(busy)return;setBusy(true);setMessage('');try{setMessage((await action())||'');}catch{setMessage('The account action could not finish. Please retry.');}finally{setBusy(false);}};
+ const passwordAction=async(action:()=>Promise<string>)=>{if(busy)return;setBusy(true);setPasswordMessage('');try{setPasswordMessage(await action());}catch{setPasswordMessage('This step could not finish. Please try again.');}finally{setBusy(false);}};
  const button=(label:string,action:()=>void,disabled=false)=><Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled:disabled||busy}} disabled={disabled||busy} onPress={action} style={[s.button,(disabled||busy)&&{opacity:.5}]}><Text style={s.buttonText}>{label}</Text></Pressable>;
  const requestCode=()=>void run(async()=>{if(Date.now()<nextRequest)return 'Wait 60 seconds before requesting another code.';setNextRequest(Date.now()+60000);return controller!.request(state.email||email);});
  const codeFields=<><Text style={s.text}>Use a fresh six-digit email code to verify your existing account. You do not need to register again.</Text>{button('Send verification code',requestCode)}<TextInput accessibilityLabel="Six-digit email code" editable={!busy} value={code} onChangeText={setCode} maxLength={6} keyboardType="number-pad" autoComplete="one-time-code" placeholder="Six-digit code" style={s.input}/>{button('Verify code',()=>void run(async()=>{const result=await controller!.verify(state.email||email,code);setCode('');return result||'Account verified. You may now set your password.';}))}</>;
@@ -39,15 +40,33 @@ export function BetaAccountPanel({account}:{account:ReturnType<typeof useBetaAcc
  <Text style={s.text}>Beta access is active. Your plans and access remain available independently of paid membership.</Text>
  <TextInput accessibilityLabel="Display name" editable={!busy} value={name} onChangeText={setName} maxLength={80} autoComplete="name" placeholder="Display name" style={s.input}/>
  {button('Save display name',()=>void run(()=>controller!.saveName(name)))}
- {button(security?'Close password settings':'Set or change password',()=>setSecurity(!security))}
- {security&&<View style={{gap:12,padding:16,backgroundColor:'#f1f7ff',borderRadius:12}}>
- <Text style={[s.text,{fontWeight:'700'}]}>Password security</Text>
- <Text style={s.text}>{state.recovery?'Recovery link verified. Choose your new password.':'After signing in with a password or verifying a fresh email code, set your password within 10 minutes. Use 6–128 characters, including at least one letter and one number.'}</Text>
- {!state.recovery&&codeFields}
+ {button('Set or change password',()=>{setPassword('');setConfirmation('');setCode('');setPasswordMessage('');setPasswordStep(state.recovery?'password':'send');setSecurity(true);})}
+ <Modal visible={security} transparent animationType="fade" onRequestClose={()=>{if(!busy)setSecurity(false);}}>
+ <View style={{flex:1,backgroundColor:'rgba(14,28,74,.65)',justifyContent:'center',padding:20}}>
+ <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{flexGrow:1,justifyContent:'center'}}>
+ <View accessibilityViewIsModal style={{width:'100%',maxWidth:460,alignSelf:'center',padding:24,gap:16,borderRadius:20,backgroundColor:'#fff'}}>
+ <Text accessibilityRole="header" style={s.title}>{passwordStep==='done'?'Password saved successfully':'Set your password'}</Text>
+ {!!passwordMessage&&<Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={{color:'#a32626',backgroundColor:'#fff0ed',padding:12,borderRadius:8,fontSize:16}}>{passwordMessage}</Text>}
+ {passwordStep==='send'&&<>
+ <Text style={s.text}>First, we’ll send a verification code to {state.email}. This confirms it’s you.</Text>
+ {button('Send code',()=>void passwordAction(async()=>{if(Date.now()<nextRequest)return 'Please wait a moment before requesting another code.';const result=await controller!.request(state.email!);if(result.startsWith('If this address')){setNextRequest(Date.now()+60000);setPasswordStep('code');return '';}return result;}))}
+ </>}
+ {passwordStep==='code'&&<>
+ <Text style={s.text}>Enter the six-digit code from your email.</Text>
+ <TextInput accessibilityLabel="Verification code" editable={!busy} value={code} onChangeText={setCode} maxLength={6} keyboardType="number-pad" autoComplete="one-time-code" autoFocus placeholder="Six-digit code" style={s.input}/>
+ {button('Continue',()=>void passwordAction(async()=>{const result=await controller!.verify(state.email!,code);if(!result){setCode('');setPasswordStep('password');}return result;}))}
+ <Pressable accessibilityRole="button" accessibilityLabel="Resend code" disabled={busy} onPress={()=>{setPasswordMessage('');setPasswordStep('send');}}><Text style={{color:'#425780',textAlign:'center',textDecorationLine:'underline'}}>Resend code</Text></Pressable>
+ </>}
+ {passwordStep==='password'&&<>
+ <Text style={s.text}>Choose at least 6 characters, including a letter and a number.</Text>
  <TextInput accessibilityLabel="New password" editable={!busy} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="new-password" textContentType="newPassword" placeholder="New password" style={s.input}/>
- <TextInput accessibilityLabel="Confirm new password" editable={!busy} value={confirmation} onChangeText={setConfirmation} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="new-password" textContentType="newPassword" placeholder="Confirm new password" style={s.input}/>
- {button('Save password',()=>void run(async()=>{const result=await controller!.savePassword(password,confirmation);setPassword('');setConfirmation('');return result;}))}
- </View>}
+ <TextInput accessibilityLabel="Confirm password" editable={!busy} value={confirmation} onChangeText={setConfirmation} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="new-password" textContentType="newPassword" placeholder="Confirm password" style={s.input}/>
+ {button('Save password',()=>void passwordAction(async()=>{const result=await controller!.savePassword(password,confirmation);if(result.startsWith('Password saved.')){setPassword('');setConfirmation('');setPasswordStep('done');return '';}return result;}))}
+ </>}
+ {passwordStep==='done'&&<><Text accessibilityLiveRegion="assertive" style={s.text}>Your password has been updated. Next time, sign in with your email and password.</Text>{button('Done',()=>setSecurity(false))}</>}
+ {busy&&<Text accessibilityLiveRegion="polite" style={s.text}>Please wait…</Text>}
+ {passwordStep!=='done'&&<Pressable accessibilityRole="button" accessibilityLabel="Cancel password setup" disabled={busy} onPress={()=>{setPassword('');setConfirmation('');setSecurity(false);}}><Text style={{color:'#425780',textAlign:'center'}}>Cancel</Text></Pressable>}
+ </View></ScrollView></View></Modal>
  <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent}} onPress={()=>setConsent(v=>!v)}><Text style={s.text}>{consent?'✓':'○'} I agree to store my account consent and feedback I choose to submit privately for beta review. Optional peptide details are included only with my feedback consent. Storage is not end-to-end encrypted.</Text></Pressable>
  {button('Save account consent',()=>void run(async()=>{await acknowledgeCloudConsent();return 'Account consent saved.';}),!consent)}
  </>}

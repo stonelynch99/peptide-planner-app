@@ -3,15 +3,17 @@ export const CODE_MESSAGE = 'If this address has an active invitation, a six-dig
 export class AuthController {
   private generation = 0;
   private stopped = false;
+  private assessedUserId: string | null = null;
   private unsubscribe?: () => void;
   constructor(private port: AuthPort, private publish: (state: AccountState) => void) {}
   private async assess(session: SessionIdentity) {
     const generation = ++this.generation;
     if (this.stopped) return;
-    this.publish({status:'loading'});
+    // Same-account reauthentication must not unmount password forms or erase their result.
+    if (!session || session.userId !== this.assessedUserId) this.publish({status:'loading'});
     try {
       const allowed = session ? await this.port.eligible() : false;
-      if (!this.stopped && generation === this.generation) this.publish(session ? {status:allowed?'eligible':'denied',...session} : {status:'signedOut'});
+      if (!this.stopped && generation === this.generation) { this.assessedUserId=allowed&&session?session.userId:null; this.publish(session ? {status:allowed?'eligible':'denied',...session} : {status:'signedOut'}); }
     } catch { if (!this.stopped && generation === this.generation) this.publish({status:'error'}); }
   }
   async start() {
@@ -54,6 +56,7 @@ export class AuthController {
     catch { return 'Display name could not be saved. Please retry.'; }
   }
   async signOut() {
+    this.assessedUserId=null;
     ++this.generation;
     this.publish({status:'loading'});
     try { await this.port.signOut(); if (!this.stopped) this.publish({status:'signedOut'}); return ''; }
