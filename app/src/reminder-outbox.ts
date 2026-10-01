@@ -1,13 +1,14 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {reminderStorage} from './reminder-storage';
+import type {StringStorage} from './persistence-v04';
 type Body=Record<string,unknown>;
 type Item={action:string;fields:Body;id:string;body?:Body;attempts:number;next:number};
 type State={version:1;items:Item[];conflict:boolean};
 export class ReminderOutbox{
  private serial:Promise<unknown>=Promise.resolve();
- constructor(private send:(user:string,body:Body)=>Promise<{accepted:boolean;revision:number}>,private currentUser:()=>string|null){}
+ constructor(private send:(user:string,body:Body)=>Promise<{accepted:boolean;revision:number}>,private currentUser:()=>string|null,private storage:StringStorage=reminderStorage){}
  private key(user:string){return 'ezpep.reminders.outbox.v1:'+user;}
- async read(user:string):Promise<State>{const raw=await AsyncStorage.getItem(this.key(user));return raw?JSON.parse(raw):{version:1,items:[],conflict:false};}
- private write(user:string,state:State){return AsyncStorage.setItem(this.key(user),JSON.stringify(state));}
+ async read(user:string):Promise<State>{const raw=await this.storage.getItem(this.key(user));return raw?JSON.parse(raw):{version:1,items:[],conflict:false};}
+ private write(user:string,state:State){return this.storage.setItem(this.key(user),JSON.stringify(state));}
  private run<T>(fn:()=>Promise<T>):Promise<T>{const result=this.serial.catch(()=>{}).then(fn);this.serial=result.catch(()=>{});return result;}
  enqueue(user:string,action:string,fields:Body){return this.run(async()=>{
   const state=await this.read(user),last=state.items.at(-1);

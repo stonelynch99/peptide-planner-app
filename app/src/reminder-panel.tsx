@@ -7,7 +7,7 @@ export default function ReminderPanel({plans,archives,onEnableAll}:{plans:SavedP
  const [status,setStatus]=useState<any>(null),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
  const refresh=async()=>setStatus(await browserReminderStatus());
  useEffect(()=>{refresh().catch(e=>setMessage(String(e.message||e)));},[]);
- const run=async(fn:()=>Promise<unknown>,success:string)=>{setBusy(true);setMessage('');try{await fn();await refresh();setMessage(success);}catch(e){setMessage(String((e as Error).message||e));}finally{setBusy(false);}};
+ const run=async(fn:()=>Promise<unknown>,success:string)=>{setBusy(true);setMessage('');try{await fn();await refresh();setMessage(success);}catch(e){setMessage(String((e as Error).message||e));await refresh().catch(()=>{});}finally{setBusy(false);}};
  return <ScrollView contentContainerStyle={{padding:20,gap:16}}>
  <Text style={u.title}>Notifications</Text>
  <Text style={u.body}>Choose this device to receive reminders while EZPep is closed. Notifications use generic text. Only reminder timing and identifiers are sent; planner backups keep their separate schedule.</Text>

@@ -26,3 +26,24 @@ test('bulk enable changes only active reminder flags and survives planner persis
  const restored=decodePlannerStore(encodePlannerStore(next));assert.equal(restored.activePlans[0].reminderEnabled,true);assert.equal(restored.activePlans[1].reminderEnabled,false);assert.equal(restored.archives[0].reminderEnabled,false);
  const legacy=enableActivePlanReminders({...E.blankStore(),active:p});assert.equal(legacy.active.reminderEnabled,true);
 });
+
+const {createReminderStorage}=require('./app/src/reminder-storage.ts');
+function memoryStorage(){const map=new Map();return {map,getItem:async k=>map.get(k)??null,setItem:async(k,v)=>{map.set(k,v);}};}
+test('full browser storage falls back for reminder queue and metadata without changing planner values',async()=>{
+ const primary=memoryStorage(),durable=memoryStorage();primary.map.set('planner','keep');primary.setItem=async()=>{throw new DOMException('full','QuotaExceededError');};
+ const storage=createReminderStorage(primary,durable),queue=new ReminderOutbox(async()=>({accepted:true,revision:1}),()=>'quota',storage);
+ await queue.enqueue('quota','cancel_event',{event_id:'taken',reason:'completed'});
+ await storage.setItem('ezpep.reminders.enabled.v1:quota','true');
+ const restarted=new ReminderOutbox(async()=>({accepted:true,revision:1}),()=>'quota',createReminderStorage(primary,durable));
+ assert.equal((await restarted.read('quota')).items.length,1);assert.equal(await storage.getItem('ezpep.reminders.enabled.v1:quota'),'true');
+ await restarted.flush('quota',async()=>0);assert.equal((await restarted.read('quota')).items.length,0);assert.equal(primary.map.get('planner'),'keep');
+});
+test('failed durable commit prevents reminder network sends and hides raw storage keys',async()=>{
+ const primary=memoryStorage(),durable=memoryStorage();primary.setItem=durable.setItem=async()=>{throw new DOMException('private-key','QuotaExceededError');};let calls=0;
+ const q=new ReminderOutbox(async()=>{calls++;return {accepted:true,revision:1};},()=>'failed',createReminderStorage(primary,durable));
+ await assert.rejects(q.enqueue('failed','cancel_event',{event_id:'taken',reason:'completed'}),e=>/Reminder updates could not be saved/.test(e.message)&&!e.message.includes('private-key'));assert.equal(calls,0);
+});
+test('durable reminder queue stays authoritative after primary storage recovers',async()=>{
+ const primary=memoryStorage(),durable=memoryStorage();primary.map.set('queue','stale');durable.map.set('queue','new');const storage=createReminderStorage(primary,durable);
+ await storage.setItem('queue','newest');assert.equal(await createReminderStorage(primary,durable).getItem('queue'),'newest');assert.equal(primary.map.get('queue'),'stale');
+});

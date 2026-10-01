@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {reminderStorage as AsyncStorage} from './reminder-storage';
 import {Platform} from 'react-native';
 import {callReminderBackend} from './cloud/client';
 import {projectReminders,reminderId} from './reminder-projection';
