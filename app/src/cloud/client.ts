@@ -1,4 +1,4 @@
-import {ATTACHMENT_BUCKET,uploadFeedback,type Screenshot} from './feedback-attachments';
+import {ATTACHMENT_BUCKET,submitRecoverableFeedback,feedbackDeadline,type Screenshot} from './feedback-attachments';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {createClient} from '@supabase/supabase-js';
 import {validateCloudConfig} from './config';
@@ -32,12 +32,15 @@ export async function acknowledgeCloudConsent() {
   if(error&&error.code!=='23505')throw new Error('Consent could not be saved. Please retry.');
 }
 export async function submitBetaFeedback(input:FeedbackInput,reportId:string,shots:Screenshot[]=[],expectedUserId?:string) {
-  const userId=await eligibleUser(),api=configured();
+  const userId=await feedbackDeadline(eligibleUser()),api=configured();
   if(!expectedUserId||userId!==expectedUserId)throw Error('Account changed. Sign back into the original account before retrying this report.');
   const row=feedbackRow(userId,input);
-  await uploadFeedback({
+  // Save the written report before starting optional uploads. Stable ID makes an
+  // ambiguous response safe to retry; this never rewrites an existing report.
+  await submitRecoverableFeedback({
+    saveText:async()=>{const {error}=await (api as any).rpc('save_beta_feedback_text',{report_id:reportId,report:row});if(error)throw Error('Feedback text could not be confirmed. Your draft is saved on this device; retry is safe.');},
     upload:async(path,file)=>{const {error}=await api.storage.from(ATTACHMENT_BUCKET).upload(path,file,{contentType:file.type,upsert:false});if(error&&String((error as any).statusCode)!=='409')throw Error('Screenshot upload failed. Keep this report open and retry; your report and screenshots are preserved.');},
-    complete:async(paths)=>{const {error}=await (api as any).rpc('submit_beta_feedback',{report_id:reportId,report:row,paths});if(error)throw Error('Feedback could not be confirmed. Keep this report open and retry; your report and screenshots are preserved.');}
+    complete:async(paths)=>{const {error}=await (api as any).rpc('attach_beta_feedback',{report_id:reportId,paths});if(error)throw Error('Your written report was saved. Screenshots could not be confirmed; retry the saved report to attach them.');}
   },userId,reportId,shots);
 }
 export type ReviewedFeedback={id:string;category:string;message:string;created_at:string;attachment_paths:string[];submitter_name?:string|null;submitter_email?:string|null};
