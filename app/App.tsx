@@ -1,4 +1,5 @@
 import ReminderPanel from './src/reminder-panel';
+import {enableActivePlanReminders} from './src/reminder-projection';
 import {setReminderAccount} from './src/reminder-browser';
 import {FeedbackAttachments} from './src/cloud/FeedbackAttachments';
 import type {Screenshot} from './src/cloud/feedback-attachments';
@@ -365,7 +366,7 @@ export default function App() {
   useEffect(()=>{
     setReminderAccount(betaAccount.state.status==='eligible'?betaAccount.state.userId??null:null);
     if(!saved.ready||saved.loadFailed||saved.saving||saved.error)return;
-    let mounted=true;const sync=()=>reconcileReminders(plans,saved.store.archives).then(()=>{if(mounted)setReminderError("");}).catch(e=>{if(mounted)setReminderError("Reminders need attention. Open More → Reminders. "+String(e));});
+    let mounted=true;const sync=()=>reconcileReminders(plans,saved.store.archives).then(()=>{if(mounted)setReminderError("");}).catch(e=>{if(mounted)setReminderError("Reminders need attention. Open More → Notifications. "+String(e));});
     sync();const timer=setInterval(sync,60000);const sub=AppState.addEventListener("change",state=>{if(state==="active")sync();});return()=>{mounted=false;clearInterval(timer);sub.remove();};
   },[saved.ready,saved.store.activePlans,saved.store.active,saved.store.archives,saved.loadFailed,saved.saving,saved.error,betaAccount.state.status,betaAccount.state.userId]);
   useEffect(()=>listenForReminder((planId)=>{if(planId)setSelectedPlanId(planId);setScreen("tracker");}),[]);
@@ -805,7 +806,7 @@ export default function App() {
         {screen==='tracker'&&!plans.length&&!saved.loadFailed&&renderStartHere()}
         {(screen==='history'||(screen==='tracker'&&!!plans.length))&&!saved.loadFailed&&<AggregateTracker plans={plans} archives={saved.store.archives} update={saved.update} initialTab={screen==='history'?'History':'Today'} onOpen={openPlan} onEdit={editPlan}/>}
         {screen==='inventory'&&!saved.loadFailed&&<MyPlans inventory store={saved.store} update={saved.update} onOpen={id=>editPlan(id,'Inventory')} onEdit={editPlan} onHistory={id=>{setSelectedPlanId(id);setScreen('planHistory');}} onDraft={()=>setScreen('review')} onGuide={()=>setScreen('guide')}/>}
-        {screen==='reminders'&&Platform.OS==='web'&&!saved.loadFailed&&<ReminderPanel plans={plans} archives={saved.store.archives}/>}
+        {screen==='reminders'&&Platform.OS==='web'&&!saved.loadFailed&&<ReminderPanel plans={plans} archives={saved.store.archives} onEnableAll={async()=>{let enabled:ReturnType<typeof getActivePlans>=[];await saved.update(old=>{const next=enableActivePlanReminders(old);enabled=getActivePlans(next);return next;});return enabled;}}/>}
         {(["plan","planDetail","planInventory","review","schedule","calc","planTracker","planHistory",...(Platform.OS!=='web'?['reminders']:[])] as Screen[]).includes(screen) && !saved.loadFailed && <Workspace screen={(screen==='planDetail'?'plan':screen==='planInventory'?'inventory':screen==='planTracker'?'tracker':screen==='planHistory'?'history':screen) as any} navigate={workspaceNavigate} store={scopedStore} update={scopedUpdate} editing={editing?{onSave:saveActiveEdits,supply:currentEdit!.supplyVials,onSupplyChange:value=>persistEdit({...currentEdit!,supplyVials:value}).catch(()=>{})}:undefined} onStarted={()=>setScreen("plans")} onDiscard={editing?discardActiveEdits:async()=>{const compound=compounds.find(c=>c.id===saved.store.draft?.compoundId);await saved.update(old=>({...old,draft:null}));if(compound)setSelected(compound);setScreen("detail");}} onGuide={()=>setScreen("guide")}/>}
       </View>
       {screen!=="welcome"&&<BottomNav active={screen==='activeEditor'?(currentEdit?.returnTo??'plans'):screen} setScreen={setScreen} />}

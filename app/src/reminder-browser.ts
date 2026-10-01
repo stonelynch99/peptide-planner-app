@@ -68,7 +68,7 @@ export async function browserReminderStatus(){
 export async function reconcileBrowserReminders(plans:SavedPlan[],archives:SavedPlan[]=[]){
  const task=async()=>{
   const u=account;
-  if(!u||Platform.OS!=='web'||await AsyncStorage.getItem(enabledKey(u))!=='true')return {message:'Set up this device in More → Reminders.',count:0,enabled:false};
+  if(!u||Platform.OS!=='web'||await AsyncStorage.getItem(enabledKey(u))!=='true')return {message:'Set up this device in More → Notifications.',count:0,enabled:false};
   const w=browser();if(w.Notification.permission!=='granted'){await workerPermission(false);throw Error('Notification permission is blocked.');}
   const projection=await projectReminders(u,plans,archives);
   const fingerprint=JSON.stringify({events:projection.events,suppressed:projection.suppressed_plan_ids,removed:projection.removed_event_ids,archived:projection.archived_plan_ids,timezone:projection.source_timezone});
@@ -82,7 +82,7 @@ export async function reconcileBrowserReminders(plans:SavedPlan[],archives:Saved
   }
   await outbox.enqueue(u,'replace_future',projection);
   const result=await outbox.flush(u,async()=>(await state(u)).revision);
-  if(result.conflict)throw Error('Reminder schedule needs review after an offline change or a change on another device. Open More → Reminders.');
+  if(result.conflict)throw Error('Reminder schedule needs review after an offline change or a change on another device. Open More → Notifications.');
   if(result.pending)throw Error('Reminder updates are waiting to retry. Keep this device online.');
   await AsyncStorage.setItem(lastKey,JSON.stringify({fingerprint,through:projection.horizon_end}));
   await workerPermission(true,u);

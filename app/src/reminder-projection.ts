@@ -30,3 +30,9 @@ export async function projectReminders(user:string,plans:SavedPlan[],archives:Sa
  for(const values of [result.events,result.suppressed_plan_ids,result.removed_event_ids,result.archived_plan_ids])if(values.length>500)throw Error('Your reminder schedule exceeds the current limit. No partial schedule was uploaded.');
  return result;
 }
+
+export function enableActivePlanReminders<T extends {activePlans?:SavedPlan[];active:SavedPlan|null}>(store:T):T{
+ const plans=Array.isArray(store.activePlans)?store.activePlans:store.active?[store.active]:[];
+ const enabled=plans.map(plan=>plan.pausedAt||plan.reminderEnabled?plan:{...plan,reminderEnabled:true});
+ return {...store,activePlans:enabled,active:enabled[0]??null};
+}
