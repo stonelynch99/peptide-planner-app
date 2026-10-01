@@ -28,6 +28,7 @@ import {
   StyleSheet,
   StatusBar,
   Alert,
+  AccessibilityInfo,
   BackHandler,
   AppState,
   Linking,
@@ -157,6 +158,13 @@ export default function App() {
   const [feedbackOrigin,setFeedbackOrigin]=useState('More');
   const [feedbackIncludePlans,setFeedbackIncludePlans]=useState(false);
   const [feedbackMessage,setFeedbackMessage]=useState('');
+  const feedbackScroll=useRef<ScrollView>(null);
+  useEffect(()=>{
+    if(screen!=='betaFeedback'||!feedbackMessage)return;
+    const frame=requestAnimationFrame(()=>feedbackScroll.current?.scrollTo({y:0,animated:false}));
+    AccessibilityInfo.announceForAccessibility(feedbackSent?'Feedback sent successfully. '+feedbackMessage:feedbackMessage);
+    return()=>cancelAnimationFrame(frame);
+  },[screen,feedbackMessage,feedbackSent]);
   const [betaConsentAt,setBetaConsentAt]=useState<string|null>(null);
   const [betaConsentChecked,setBetaConsentChecked]=useState(false);
   const [analyticsConsent,setAnalyticsConsent]=useState(false);
@@ -602,9 +610,10 @@ export default function App() {
       if(!feedbackAttempt.current)feedbackAttempt.current={id:crypto.randomUUID(),userId:betaAccount.state.userId!,input:{category:feedbackType,message:feedbackText,origin:feedbackOrigin,platform:Platform.OS,browser:'Other',includePlanDetails:feedbackIncludePlans,activePeptideNames:feedbackIncludePlans?plans.map(plan=>plan.compoundName):undefined},shots:[...feedbackShots]};
       await saveFeedbackDraft(feedbackAttempt.current);locallySaved=true;
       await feedbackDeadline(acknowledgeCloudConsent());
-      await submitBetaFeedback(feedbackAttempt.current.input,feedbackAttempt.current.id,feedbackAttempt.current.shots,feedbackAttempt.current.userId);
-      await saveFeedbackDraft({...feedbackAttempt.current,sent:true});
+      await submitBetaFeedback(feedbackAttempt.current.input,feedbackAttempt.current.id,feedbackAttempt.current.shots,feedbackAttempt.current.userId,()=>{if(feedbackAttempt.current?.shots.length)setFeedbackMessage('Your written report was saved. Screenshots are uploading; please keep this screen open.');});
+      // Server receipt is authoritative even if marking the local outbox sent fails.
       setFeedbackSent(true);
+      await saveFeedbackDraft({...feedbackAttempt.current,sent:true}).catch(()=>{});
       setFeedbackMessage(feedbackAttempt.current.input.includePlanDetails?'Feedback submitted. Only the peptide names you chose to include were shared.':'Feedback submitted. Your planner data was not uploaded.');
       if(analyticsConsent===true)void trackBetaAnalytics('feedback_submitted');
     }catch(error){if(!locallySaved)feedbackAttempt.current=null;setFeedbackMessage(error instanceof Error?error.message:'Feedback was not submitted. Your report remains here.');}
@@ -621,14 +630,15 @@ export default function App() {
     <AppButton label="Back to More" secondary onPress={()=>setScreen('more')}/>
   </ScrollView>;
 
-  const renderBetaFeedback=()=> <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+  const renderBetaFeedback=()=> <ScrollView ref={feedbackScroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
     <Pressable accessibilityRole="button" onPress={()=>setScreen(feedbackOrigin==='Community'?'school':'more')}><Text style={styles.back}>‹ Back</Text></Pressable>
+    {!!feedbackMessage&&<View testID="feedback-result" role="status" accessibilityLiveRegion="polite" style={{backgroundColor:feedbackSent?'#e7f6ed':'#fff4db',borderColor:feedbackSent?'#237546':'#8a651b',borderWidth:2,borderRadius:12,padding:16,marginBottom:16}}><Text accessibilityRole="header" style={{fontSize:22,fontWeight:'700',color:'#123c2b',marginBottom:8}}>{feedbackSent?'Feedback sent successfully':feedbackMessage.startsWith('Your written report was saved.')?'Report saved — screenshots still pending':'Feedback needs your attention'}</Text><Text style={{fontSize:17,lineHeight:26,color:'#173049',flexShrink:1}}>{feedbackMessage}</Text></View>}
     <Text style={styles.kicker}>PRIVATE BETA FEEDBACK</Text><Text style={styles.detailTitle}>Help improve EZPep Planner</Text><Text style={styles.detailMeta}>Report a problem, confusing step, suggestion or calculation concern.</Text>
     <View style={styles.notice}><Text style={styles.noticeText}>Send your feedback and optional screenshots privately to the beta review team. Your plans and history are not included automatically.</Text></View>
     <Pressable accessibilityRole="checkbox" accessibilityState={{checked:feedbackPermission}} disabled={feedbackSubmitting} onPress={()=>setFeedbackPermission(v=>!v)} style={styles.notice}><Text style={styles.noticeText}>{feedbackPermission?'✓':'○'} I agree to send this report and the screenshots I select privately to EZPep beta reviewers.</Text></Pressable>
     {!!feedbackAttempt.current&&!feedbackSent&&<Text style={styles.helper}>This saved submission is kept unchanged for safe retry. You can start another report below without losing it.</Text>}
     {feedbackPending.length>0&&<View style={styles.lessonCard}><Text style={styles.lessonTitle}>Saved reports awaiting confirmation</Text>{feedbackPending.map((draft,index)=><AppButton key={draft.id} label={`Restore saved report ${index+1}`} secondary disabled={feedbackSubmitting} onPress={()=>{feedbackShots.forEach(s=>URL.revokeObjectURL(s.preview));const shots=restoreFeedbackShots(draft);feedbackAttempt.current={...draft,shots};setFeedbackShots(shots);setFeedbackText(draft.input.message);setFeedbackType(draft.input.category);setFeedbackIncludePlans(!!draft.input.includePlanDetails);setFeedbackSent(false);setFeedbackMessage('Saved report restored. Retry reuses its original report number.');}}/>)}</View>}
-    <View style={styles.lessonCard}><Text style={styles.lessonTitle}>What kind of feedback is this?</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{(['Bug','Confusing','Suggestion','Calculation concern'] as const).map(type=><Pressable key={type} accessibilityRole="radio" accessibilityState={{checked:feedbackType===type}} disabled={!!feedbackAttempt.current} onPress={()=>setFeedbackType(type)} style={[styles.schoolFilter,feedbackType===type&&styles.schoolFilterActive]}><Text style={[styles.schoolFilterText,feedbackType===type&&styles.schoolFilterTextActive]}>{type}</Text></Pressable>)}</View><Text style={[styles.inputLabel,{marginTop:16}]}>What happened or what would help?</Text><TextInput accessibilityLabel="Beta feedback details" editable={!feedbackAttempt.current} multiline value={feedbackText} onChangeText={value=>{setFeedbackText(value);setFeedbackMessage('');}} placeholder="Describe the screen, action and result…" style={[styles.smallInput,{minHeight:140,textAlignVertical:'top'}]}/><Pressable accessibilityRole="checkbox" accessibilityState={{checked:feedbackIncludePlans}} disabled={!!feedbackAttempt.current} onPress={()=>setFeedbackIncludePlans(value=>!value)} style={styles.notice}><Text style={styles.noticeText}>{feedbackIncludePlans?'✓':'○'} Include active peptide names in this report</Text><Text style={styles.helper}>Names only — no doses, schedules or history.</Text></Pressable><FeedbackAttachments shots={feedbackShots} onChange={setFeedbackShots} onError={setFeedbackMessage} disabled={!!feedbackAttempt.current||feedbackSubmitting}/>{!!feedbackMessage&&<Text accessibilityLiveRegion="polite" style={styles.helper}>{feedbackMessage}</Text>}{betaAccount.state.status==='eligible'&&<><AppButton label={feedbackSent?"Feedback submitted":feedbackAttempt.current?"Retry feedback":"Submit feedback"} disabled={feedbackSubmitting||feedbackSent} onPress={()=>{void sendCloudFeedback();}}/></>}<AppButton label={feedbackAttempt.current&&!feedbackSent?"Start another report (keeps saved retry)":"Clear form"} secondary disabled={feedbackSubmitting} onPress={()=>{feedbackShots.forEach(x=>URL.revokeObjectURL(x.preview));setFeedbackShots([]);feedbackAttempt.current=null;setFeedbackSent(false);setFeedbackText('');setFeedbackIncludePlans(false);setFeedbackMessage('Form cleared. Any unfinished submission is preserved under Saved reports below.');}}/></View>
+    <View style={styles.lessonCard}><Text style={styles.lessonTitle}>What kind of feedback is this?</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{(['Bug','Confusing','Suggestion','Calculation concern'] as const).map(type=><Pressable key={type} accessibilityRole="radio" accessibilityState={{checked:feedbackType===type}} disabled={!!feedbackAttempt.current} onPress={()=>setFeedbackType(type)} style={[styles.schoolFilter,feedbackType===type&&styles.schoolFilterActive]}><Text style={[styles.schoolFilterText,feedbackType===type&&styles.schoolFilterTextActive]}>{type}</Text></Pressable>)}</View><Text style={[styles.inputLabel,{marginTop:16}]}>What happened or what would help?</Text><TextInput accessibilityLabel="Beta feedback details" editable={!feedbackAttempt.current} multiline value={feedbackText} onChangeText={value=>{setFeedbackText(value);setFeedbackMessage('');}} placeholder="Describe the screen, action and result…" style={[styles.smallInput,{minHeight:140,textAlignVertical:'top'}]}/><Pressable accessibilityRole="checkbox" accessibilityState={{checked:feedbackIncludePlans}} disabled={!!feedbackAttempt.current} onPress={()=>setFeedbackIncludePlans(value=>!value)} style={styles.notice}><Text style={styles.noticeText}>{feedbackIncludePlans?'✓':'○'} Include active peptide names in this report</Text><Text style={styles.helper}>Names only — no doses, schedules or history.</Text></Pressable><FeedbackAttachments shots={feedbackShots} onChange={setFeedbackShots} onError={setFeedbackMessage} disabled={!!feedbackAttempt.current||feedbackSubmitting}/>{betaAccount.state.status==='eligible'&&<><AppButton label={feedbackSent?"Feedback submitted":feedbackAttempt.current?"Retry feedback":"Submit feedback"} disabled={feedbackSubmitting||feedbackSent} onPress={()=>{void sendCloudFeedback();}}/></>}<AppButton label={feedbackAttempt.current&&!feedbackSent?"Start another report (keeps saved retry)":"Clear form"} secondary disabled={feedbackSubmitting} onPress={()=>{feedbackShots.forEach(x=>URL.revokeObjectURL(x.preview));setFeedbackShots([]);feedbackAttempt.current=null;setFeedbackSent(false);setFeedbackText('');setFeedbackIncludePlans(false);setFeedbackMessage('Form cleared. Any unfinished submission is preserved under Saved reports below.');}}/></View>
   </ScrollView>;
 
   const renderMore = () => {
