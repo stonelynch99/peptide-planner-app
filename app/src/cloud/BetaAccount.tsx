@@ -1,6 +1,7 @@
 import {FeedbackReview} from './FeedbackReview';
 import React,{useEffect,useMemo,useState} from 'react';
-import {AppState,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {AppState,Image,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {EZPEP_LOCKUP_DATA_URI} from '../brand-assets';
 import {AuthController} from './auth-controller';
 import {acknowledgeCloudConsent,authPort,cloudConfig,readBetaAdminDashboard,type BetaAdminUser} from './client';
 import type {AccountState} from './contracts';
@@ -11,22 +12,51 @@ export function useBetaAccount(){
   return {state,controller};
 }
 export function BetaAccountPanel({account}:{account:ReturnType<typeof useBetaAccount>}){
-  const [email,setEmail]=useState(''),[code,setCode]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[consent,setConsent]=useState(false),[nextRequest,setNextRequest]=useState(0);
-  const {state,controller}=account;
-  useEffect(()=>{setCode('');setConsent(false);setMessage('');},[state.userId]);
-  const run=async(action:()=>Promise<string|void>)=>{if(busy)return;setBusy(true);try{setMessage((await action())||'');}catch{setMessage('The account action could not finish. Please retry.');}finally{setBusy(false);}};
-  const button=(label:string,action:()=>void,disabled=false)=><Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled:disabled||busy}} disabled={disabled||busy} onPress={action} style={[s.button,(disabled||busy)&&{opacity:.5}]}><Text style={s.buttonText}>{label}</Text></Pressable>;
-  return <View style={s.card}><Text style={s.title}>Private beta account</Text><Text style={s.text}>Signing in does not silently upload, replace or delete planner data. Use Cloud sync to move a verified copy between your invited devices; EZPep keeps a local recovery copy first.</Text>
-    {state.status==='unconfigured'&&<Text style={s.text}>Cloud account configuration is unavailable. For privacy, planner access is closed until the administrator completes setup.</Text>}
-    {state.status==='invalid'&&<Text style={s.text}>Cloud account configuration needs administrator attention. For privacy, planner access remains closed.</Text>}
-    {state.status==='loading'&&<Text accessibilityLiveRegion="polite" style={s.text}>Checking beta access…</Text>}
-    {state.status==='eligible'?<><Text style={s.text}>Your beta invitation is active. Open Cloud sync below to check, upload or load your account’s planner safely.</Text><Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent}} onPress={()=>setConsent(value=>!value)}><Text style={s.text}>{consent?'✓':'○'} I agree to store this account consent and any feedback I choose to submit privately for beta review. Optional peptide names are sent only when I select them on the feedback form. This is not end-to-end encrypted storage.</Text></Pressable>{button('Save account consent',()=>void run(async()=>{await acknowledgeCloudConsent();return 'Account consent saved.';}),!consent)}</>:null}
-    {state.status==='denied'&&<Text style={s.text}>This session does not have active beta access. Contact the beta organizer or sign out.</Text>}
-    {state.status==='error'&&<><Text style={s.text}>Beta access could not be checked. Please retry.</Text>{button('Retry account check',()=>void run(()=>controller!.refresh()))}</>}
-    {state.status==='signedOut'&&<><Text style={s.text}>Use the email address invited by the beta organizer. No password is needed.</Text><TextInput accessibilityLabel="Invited email address" value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="email" placeholder="Email address" style={s.input}/>{button(nextRequest?'Request new code':'Send six-digit code',()=>void run(async()=>{if(Date.now()<nextRequest)return 'Wait 60 seconds before requesting another code.';const result=await controller!.request(email);setNextRequest(Date.now()+60000);return result;}))}<TextInput accessibilityLabel="Six-digit email code" value={code} onChangeText={setCode} maxLength={6} keyboardType="number-pad" autoComplete="one-time-code" placeholder="Six-digit code" style={s.input}/>{button('Verify code',()=>void run(()=>controller!.verify(email,code)))}</>}
-    {controller&&state.status!=='signedOut'&&state.status!=='loading'&&button('Sign out',()=>void run(()=>controller.signOut()))}
-    {!!message&&<Text accessibilityLiveRegion="polite" style={s.text}>{message}</Text>}
-  </View>;
+ const {state,controller}=account;
+ const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[confirmation,setConfirmation]=useState(''),[code,setCode]=useState(''),[name,setName]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[codeMode,setCodeMode]=useState(false),[security,setSecurity]=useState(false),[consent,setConsent]=useState(false),[nextRequest,setNextRequest]=useState(0);
+ useEffect(()=>{setPassword('');setConfirmation('');setCode('');setName(state.displayName||'');setConsent(false);},[state.userId,state.displayName]);
+ useEffect(()=>{if(state.recovery)setSecurity(true);},[state.recovery]);
+ const run=async(action:()=>Promise<string|void>)=>{if(busy)return;setBusy(true);setMessage('');try{setMessage((await action())||'');}catch{setMessage('The account action could not finish. Please retry.');}finally{setBusy(false);}};
+ const button=(label:string,action:()=>void,disabled=false)=><Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled:disabled||busy}} disabled={disabled||busy} onPress={action} style={[s.button,(disabled||busy)&&{opacity:.5}]}><Text style={s.buttonText}>{label}</Text></Pressable>;
+ const requestCode=()=>void run(async()=>{if(Date.now()<nextRequest)return 'Wait 60 seconds before requesting another code.';setNextRequest(Date.now()+60000);return controller!.request(state.email||email);});
+ const codeFields=<><Text style={s.text}>Use a fresh six-digit email code to verify your existing account. You do not need to register again.</Text>{button('Send verification code',requestCode)}<TextInput accessibilityLabel="Six-digit email code" editable={!busy} value={code} onChangeText={setCode} maxLength={6} keyboardType="number-pad" autoComplete="one-time-code" placeholder="Six-digit code" style={s.input}/>{button('Verify code',()=>void run(async()=>{const result=await controller!.verify(state.email||email,code);setCode('');return result||'Account verified. You may now set your password.';}))}</>;
+ return <View style={[s.card,{width:'100%',maxWidth:680,alignSelf:'center',borderColor:'#cddaf0',borderWidth:1,borderRadius:20,gap:12}]}>
+ <Image source={{uri:EZPEP_LOCKUP_DATA_URI}} accessibilityLabel="EZPep Planner" resizeMode="contain" style={{width:180,height:80,alignSelf:'center'}}/>
+ <Text style={s.title}>{state.status==='eligible'?'Your EZPep account':'Welcome to EZPep'}</Text>
+ <Text style={s.text}>Your account connects your planner and membership. Signing in never replaces your saved plans.</Text>
+ {(state.status==='unconfigured'||state.status==='invalid')&&<Text style={s.text}>Account configuration needs administrator attention. Your local plans are preserved.</Text>}
+ {state.status==='loading'&&<Text accessibilityLiveRegion="polite" style={s.text}>Checking account access…</Text>}
+ {state.status==='signedOut'&&<>
+ <Text style={s.text}>Sign in with your existing beta email address.</Text>
+ <TextInput accessibilityLabel="Email address" editable={!busy} value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="username" textContentType="username" placeholder="Email address" style={s.input}/>
+ <TextInput accessibilityLabel="Password" editable={!busy} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" textContentType="password" placeholder="Password" style={s.input} onSubmitEditing={()=>void run(async()=>{const result=await controller!.passwordSignIn(email,password);setPassword('');return result;})}/>
+ {button('Sign in',()=>void run(async()=>{const result=await controller!.passwordSignIn(email,password);setPassword('');return result;}))}
+ {button('Forgot password?',()=>void run(async()=>{if(Date.now()<nextRequest)return 'Wait 60 seconds before requesting another email.';setNextRequest(Date.now()+60000);return controller!.recover(email);}))}
+ {button(codeMode?'Hide email-code sign-in':'Use an email code / set up a password',()=>setCodeMode(!codeMode))}
+ {codeMode&&codeFields}</>}
+ {state.status==='eligible'&&<>
+ <Text style={[s.text,{fontWeight:'700'}]}>{state.displayName||'Signed in'} · {state.email}</Text>
+ <Text style={s.text}>Beta access is active. Your plans and access remain available independently of paid membership.</Text>
+ <TextInput accessibilityLabel="Display name" editable={!busy} value={name} onChangeText={setName} maxLength={80} autoComplete="name" placeholder="Display name" style={s.input}/>
+ {button('Save display name',()=>void run(()=>controller!.saveName(name)))}
+ {button(security?'Close password settings':'Set or change password',()=>setSecurity(!security))}
+ {security&&<View style={{gap:12,padding:16,backgroundColor:'#f1f7ff',borderRadius:12}}>
+ <Text style={[s.text,{fontWeight:'700'}]}>Password security</Text>
+ <Text style={s.text}>{state.recovery?'Recovery link verified. Choose your new password.':'After signing in with a password or verifying a fresh email code, set your password within 10 minutes. Use 6–128 characters, including at least one letter and one number.'}</Text>
+ {!state.recovery&&codeFields}
+ <TextInput accessibilityLabel="New password" editable={!busy} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="new-password" textContentType="newPassword" placeholder="New password" style={s.input}/>
+ <TextInput accessibilityLabel="Confirm new password" editable={!busy} value={confirmation} onChangeText={setConfirmation} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="new-password" textContentType="newPassword" placeholder="Confirm new password" style={s.input}/>
+ {button('Save password',()=>void run(async()=>{const result=await controller!.savePassword(password,confirmation);setPassword('');setConfirmation('');return result;}))}
+ </View>}
+ <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent}} onPress={()=>setConsent(v=>!v)}><Text style={s.text}>{consent?'✓':'○'} I agree to store my account consent and feedback I choose to submit privately for beta review. Optional peptide details are included only with my feedback consent. Storage is not end-to-end encrypted.</Text></Pressable>
+ {button('Save account consent',()=>void run(async()=>{await acknowledgeCloudConsent();return 'Account consent saved.';}),!consent)}
+ </>}
+ {state.status==='denied'&&<Text style={s.text}>This account does not currently have beta access. Contact the beta organizer or sign out.</Text>}
+ {state.status==='error'&&<><Text style={s.text}>Account access or the recovery link could not be verified. Your data is preserved. Retry or request a new recovery link.</Text>{button('Retry account check',()=>void run(()=>controller!.refresh()))}</>}
+ {controller&&state.status!=='signedOut'&&state.status!=='loading'&&button('Sign out',()=>void run(()=>controller.signOut()))}
+ {busy&&<Text accessibilityLiveRegion="polite" style={s.text}>Please wait…</Text>}
+ {!!message&&<Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[s.text,{padding:12,backgroundColor:'#e9faff',borderRadius:8}]}>{message}</Text>}
+ </View>;
 }
 const adminDate=(value:string|null)=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'Not yet';
 const adminDuration=(seconds:number)=>seconds<60?seconds+' sec':Math.round(seconds/60)<60?Math.round(seconds/60)+' min':(seconds/3600).toFixed(1)+' hr';

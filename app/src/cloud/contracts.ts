@@ -1,11 +1,15 @@
 export const CONSENT_VERSION = 'beta-privacy-v1';
 export const AUTH_STORAGE_KEY = 'ezpep.beta.auth.v1';
-export type AccountState = { status: 'unconfigured' | 'invalid' | 'loading' | 'signedOut' | 'eligible' | 'denied' | 'error'; userId?: string };
-export type SessionIdentity = { userId: string } | null;
+export type AccountState = { status: 'unconfigured' | 'invalid' | 'loading' | 'signedOut' | 'eligible' | 'denied' | 'error'; userId?: string; email?: string; displayName?: string; recovery?: boolean };
+export type SessionIdentity = { userId: string; email?: string; displayName?: string; recovery?: boolean } | null;
 export interface AuthPort {
   restore(): Promise<SessionIdentity>;
   requestCode(email: string): Promise<void>;
   verifyCode(email: string, code: string): Promise<SessionIdentity>;
+  passwordSignIn?(email: string, password: string): Promise<SessionIdentity>;
+  requestRecovery?(email: string): Promise<void>;
+  updatePassword?(password: string): Promise<void>;
+  updateDisplayName?(name: string): Promise<void>;
   eligible(): Promise<boolean>;
   signOut(): Promise<void>;
   subscribe(listener: (session: SessionIdentity) => void): () => void;

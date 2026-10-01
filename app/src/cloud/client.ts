@@ -5,15 +5,49 @@ import {validateCloudConfig} from './config';
 import {AUTH_STORAGE_KEY,CONSENT_VERSION,feedbackRow,type AuthPort,type FeedbackInput} from './contracts';
 import type {Database} from './database';
 export const cloudConfig = validateCloudConfig(process.env.EXPO_PUBLIC_SUPABASE_URL, process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
-const client = cloudConfig.status === 'ready' ? createClient<Database>(cloudConfig.url,cloudConfig.key,{auth:{storage:AsyncStorage,storageKey:AUTH_STORAGE_KEY,persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}}) : null;
+const client = cloudConfig.status === 'ready' ? createClient<Database>(cloudConfig.url,cloudConfig.key,{auth:{storage:AsyncStorage,storageKey:AUTH_STORAGE_KEY,persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,flowType:'pkce'}}) : null;
 function configured() { if (!client) throw new Error('Cloud accounts are unavailable.'); return client; }
+// Recovery is exchanged by Supabase using this browser's PKCE verifier. URL flags never grant access.
+let recoveryUser:string|null=null, verifiedAt=0, verifiedUser:string|null=null;
+const identity=(user:any)=>({userId:user.id,email:user.email||'',displayName:typeof user.user_metadata?.display_name==='string'?user.user_metadata.display_name:'',recovery:recoveryUser===user.id});
+let recoveryExchange:Promise<void>|null=null;
+async function restoreRecovery(){
+  if(recoveryExchange)return recoveryExchange;
+  recoveryExchange=(async()=>{
+    if(typeof window==='undefined')return;
+    const url=new URL(window.location.href),code=url.searchParams.get('code');
+    const rejected=url.searchParams.has('error')||new URLSearchParams(url.hash.slice(1)).has('error');
+    if(!code&&!rejected)return;
+    // Accept callbacks only at the exact production origin/root. Strip sensitive URL material before awaiting.
+    if(url.origin!=='https://app.ezpepplanner.com'||url.pathname!=='/')return;
+    window.history.replaceState(null,'','/#membership');
+    if(rejected||!code)throw Error('Recovery link is invalid or expired.');
+    const {data,error}=await configured().auth.exchangeCodeForSession(code);
+    if(error||!data.session)throw Error('Recovery link is invalid or expired.');
+    const checked=await configured().auth.getUser();
+    if(checked.error||checked.data.user?.id!==data.session.user.id)throw Error('Recovery could not be verified.');
+    // PASSWORD_RECOVERY comes from SDK-verified exchange, not a query parameter.
+  })();
+  return recoveryExchange;
+}
+async function requireAccount(){
+ const {data,error}=await configured().auth.getUser();
+ if(error||!data.user)throw Error('Authentication required.');
+ const access=await configured().rpc('beta_access');
+ if(access.error||access.data!==true)throw Error('Account unavailable.');
+ return data.user;
+}
 export const authPort: AuthPort = {
-  async restore(){const {data,error}=await configured().auth.getSession();if(error)throw error;return data.session?{userId:data.session.user.id}:null;},
+  async restore(){await restoreRecovery();const {data,error}=await configured().auth.getSession();if(error)throw error;return data.session?identity(data.session.user):null;},
   async requestCode(email){const {error}=await configured().functions.invoke('beta-request-code',{body:{email:email.trim().toLowerCase()}});if(error)throw Object.assign(Error('Code delivery could not be confirmed. Wait 60 seconds and retry.'),{code:'DELIVERY_UNAVAILABLE'});},
-  async verifyCode(email,token){const {data,error}=await configured().auth.verifyOtp({email,token,type:'email'});if(error)throw error;return data.session?{userId:data.session.user.id}:null;},
+  async verifyCode(email,token){const {data,error}=await configured().auth.verifyOtp({email,token,type:'email'});if(error)throw error;if(data.session){verifiedUser=data.session.user.id;verifiedAt=Date.now();}return data.session?identity(data.session.user):null;},
+  async passwordSignIn(email,password){const {data,error}=await configured().auth.signInWithPassword({email,password});if(error)throw Error('Sign-in failed.');if(data.session){verifiedUser=data.session.user.id;verifiedAt=Date.now();}return data.session?identity(data.session.user):null;},
+  async requestRecovery(email){const {error}=await configured().auth.resetPasswordForEmail(email,{redirectTo:'https://app.ezpepplanner.com/'});if(error)throw Error('Recovery unavailable.');},
+  async updatePassword(password){const user=await requireAccount();if(verifiedUser!==user.id||Date.now()-verifiedAt>600000)throw Error('Fresh verification required.');const {error}=await configured().auth.updateUser({password});if(error)throw Error('Password update failed.');recoveryUser=null;verifiedAt=0;verifiedUser=null;},
+  async updateDisplayName(name){await requireAccount();const {error}=await configured().auth.updateUser({data:{display_name:name}});if(error)throw Error('Profile update failed.');},
   async eligible(){const {data,error}=await configured().rpc('accept_beta_invite');if(error)throw error;return data===true;},
-  async signOut(){const {error}=await configured().auth.signOut({scope:'local'});if(error)throw error;},
-  subscribe(listener){const {data}=configured().auth.onAuthStateChange((_event,session)=>{setTimeout(()=>listener(session?{userId:session.user.id}:null),0);});return()=>data.subscription.unsubscribe();},
+  async signOut(){const {error}=await configured().auth.signOut({scope:'local'});if(error)throw error;recoveryUser=null;verifiedUser=null;verifiedAt=0;recoveryExchange=Promise.resolve();},
+  subscribe(listener){const {data}=configured().auth.onAuthStateChange((event,session)=>{if(event==='PASSWORD_RECOVERY'&&session){recoveryUser=session.user.id;verifiedUser=session.user.id;verifiedAt=Date.now();}setTimeout(()=>listener(session?identity(session.user):null),0);});return()=>data.subscription.unsubscribe();},
 };
 export async function eligibleUser() {
   const api=configured();

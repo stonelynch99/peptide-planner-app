@@ -11,7 +11,7 @@ export class AuthController {
     this.publish({status:'loading'});
     try {
       const allowed = session ? await this.port.eligible() : false;
-      if (!this.stopped && generation === this.generation) this.publish(session ? {status:allowed?'eligible':'denied',userId:session.userId} : {status:'signedOut'});
+      if (!this.stopped && generation === this.generation) this.publish(session ? {status:allowed?'eligible':'denied',...session} : {status:'signedOut'});
     } catch { if (!this.stopped && generation === this.generation) this.publish({status:'error'}); }
   }
   async start() {
@@ -31,6 +31,27 @@ export class AuthController {
     const generation = this.generation;
     try { const session = await this.port.verifyCode(email.trim().toLowerCase(),code); if (!session) return 'The code is incorrect or expired. Request a new code.'; if (!this.stopped && generation === this.generation) await this.assess(session); return ''; }
     catch { return 'The code is incorrect or expired. Request a new code.'; }
+  }
+  async passwordSignIn(email: string, password: string) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || !password) return 'Enter your email and password.';
+    try { const session=await this.port.passwordSignIn!(email.trim().toLowerCase(),password); if(!session)throw Error(); await this.assess(session); return ''; }
+    catch { return 'Sign-in could not be completed. Check your details or use account recovery.'; }
+  }
+  async recover(email: string) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || email.length>254) return 'Enter a valid email address.';
+    try { await this.port.requestRecovery!(email.trim().toLowerCase()); } catch { /* Same response for all addresses, including throttled requests. */ }
+    return 'If this address has an account, a secure recovery email will arrive. Open it in this same browser. Wait 60 seconds before requesting another.';
+  }
+  async savePassword(password: string, confirmation: string) {
+    if(password.length<6 || password.length>128 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password))return 'Use 6–128 characters, including at least one letter and one number.';
+    if(password!==confirmation)return 'The passwords do not match.';
+    try { await this.port.updatePassword!(password); await this.refresh(); return 'Password saved. You can now sign in with your email and password.'; }
+    catch { return 'Password was not changed. Verify your account with a fresh email code or recovery link, then retry. Use a strong, unique password.'; }
+  }
+  async saveName(name:string) {
+    if(!name.trim() || name.trim().length>80)return 'Enter a display name of 1–80 characters.';
+    try { await this.port.updateDisplayName!(name.trim()); await this.refresh(); return 'Display name saved.'; }
+    catch { return 'Display name could not be saved. Please retry.'; }
   }
   async signOut() {
     ++this.generation;
