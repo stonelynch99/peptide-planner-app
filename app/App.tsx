@@ -791,7 +791,7 @@ export default function App() {
     </ScrollView>
   );
 
-  useQuietRelease(saved.ready&&!saved.loadFailed&&!saved.error&&!saved.saving&&betaAccount.state.status==='eligible'&&cloudSync.state.kind==='upToDate'&&!saved.store.draft&&!saved.store.activeEdit&&!currentEdit&&!editingActive&&!feedbackSubmitting&&!feedbackBusy.current&&!feedbackText&&!feedbackShots.length&&!feedbackPending.length&&!importing&&!importPreview&&!restoreCandidate&&!restoringBackup&&!cloudGuideOpen&&!membershipOpen&&['tracker','plans','more','school'].includes(screen),betaAccount.state.userId??null,saved.store);
+  useQuietRelease(saved.ready&&!saved.loadFailed&&!saved.error&&!saved.saving&&betaAccount.state.status==='eligible'&&cloudSync.state.kind==='upToDate'&&!saved.store.draft&&!saved.store.activeEdit&&!currentEdit&&!editingActive&&!feedbackSubmitting&&!feedbackBusy.current&&!feedbackText&&!feedbackShots.length&&!feedbackPending.length&&!importing&&!importPreview&&!restoreCandidate&&!restoringBackup&&!cloudGuideOpen&&!membershipOpen&&!betaAccount.state.recovery&&['tracker','plans','more','school'].includes(screen),betaAccount.state.userId??null,saved.store);
 
   if(!saved.ready)return <SafeAreaProvider><SafeAreaView style={styles.safe}><Text style={styles.detailTitle}>Opening your saved plan…</Text></SafeAreaView></SafeAreaProvider>;
   if(saved.loadFailed)return <SafeAreaProvider><SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.welcomeContent}>
