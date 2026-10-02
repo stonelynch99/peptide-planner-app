@@ -536,7 +536,7 @@ export default function App() {
       {plans.length ? plans.map(plan => renderReference(plan, deep)) : <View style={styles.lessonCard}><Text style={styles.nextText}>{selected.id==='ss-31'?'SS-31 content / research gap: no approved transferable reference plan is supplied.':'No transferable reference plan is supplied in this library.'}</Text><Text style={styles.sourceClass}>{RESEARCH_PRACTICE_LABEL}</Text><Text style={styles.helper}>{researchPracticeFor(selected).transferable?'Reference available for review.':'Awaiting reviewed defaults. No new values have been supplied.'}</Text><Text style={styles.helper}>You can create a Custom Plan in Guide. No schedule or setup values will be filled in without a reference.</Text></View>}
       {selected.researchPracticeReference&&<ResearchPracticeCard reference={selected.researchPracticeReference} onModel={()=>copySchoolPlan()}/>}{record.commonResearchPractice && <View style={styles.lessonCard}>
         <Evidence kind={record.commonResearchPractice.sourceClass}/>
-        <View style={{flexDirection:"row",alignItems:"center"}}><Text style={[styles.lessonTitle,{flex:1}]}>{record.commonResearchPractice.title}</Text><ProfessorHelp title="About this reference plan" body="This shows a staged research-reference plan, including the stage amounts, duration, schedule, vial and calculation setup used in the cited source." note="Tap Use This Plan to copy these details into Build Plan. You can review and change every field before starting it. This is educational reference information, not a personalized recommendation."/></View>
+        <View style={{flexDirection:"row",alignItems:"center"}}><Text style={[styles.lessonTitle,{flex:1}]}>{record.commonResearchPractice.title}</Text><ProfessorHelp title="About this reference plan" body="This shows a staged research-reference plan, including the stage doses, duration, schedule, vial and calculation setup used in the cited source." note="Tap Use This Plan to copy these details into Build Plan. You can review and change every field before starting it. This is educational reference information, not a personalized recommendation."/></View>
         {(record.commonResearchPractice.stages||[]).map((stage:any,i:number)=><Text key={i} style={styles.nextText}>Stage {i+1} · {stage.amountMcg!=null?stage.amountMcg+' mcg':stage.amountMg+' mg'} · {stage.durationWeeks} weeks</Text>)}
         <Text style={styles.nextText}>{record.commonResearchPractice.frequency?.type==='daily'?'Daily':'Mon–Fri'} · 9:00 AM</Text>
         <Text style={styles.nextText}>{record.commonResearchPractice.vialStrengthMg} mg vial · {record.commonResearchPractice.diluentMl} mL diluent</Text>
@@ -627,7 +627,7 @@ export default function App() {
   const renderBetaPrivacy=()=> <ScrollView contentContainerStyle={styles.scrollContent}>
     <Pressable accessibilityRole="button" onPress={()=>setScreen('more')}><Text style={styles.back}>‹ More</Text></Pressable><Text style={styles.kicker}>PRIVATE WEB BETA</Text><Text style={styles.detailTitle}>Privacy and participation</Text><Text style={styles.detailMeta}>Review this draft before joining the invite-only beta.</Text>
     <View style={styles.lessonCard}><Text style={styles.lessonTitle}>What this beta is</Text><Text style={styles.nextText}>EZPep Planner is an educational research, planning and tracking tool. It does not diagnose, prescribe, select a peptide or replace professional medical advice. Beta features may change and may contain errors.</Text></View>
-    <View style={styles.lessonCard}><Text style={styles.lessonTitle}>Your information</Text><Text style={styles.nextText}>The current build keeps plans, schedules, calculations, history and inventory on this device. When cloud accounts are enabled, transfer will require a preview and explicit confirmation. The local copy will remain recoverable during migration.</Text><Text style={styles.nextText}>Routine authentication and reminder emails will not include peptide names, amounts, schedules or history. Feedback excludes plan information unless you explicitly choose to include it. EZPep also records limited product usage and time spent by app area for service operation and improvement; it does not include planner content.</Text></View>
+    <View style={styles.lessonCard}><Text style={styles.lessonTitle}>Your information</Text><Text style={styles.nextText}>The current build keeps plans, schedules, calculations, history and inventory on this device. When cloud accounts are enabled, transfer will require a preview and explicit confirmation. The local copy will remain recoverable during migration.</Text><Text style={styles.nextText}>Routine authentication and reminder emails will not include peptide names, doses, schedules or history. Feedback excludes plan information unless you explicitly choose to include it. EZPep also records limited product usage and time spent by app area for service operation and improvement; it does not include planner content.</Text></View>
     <View style={styles.lessonCard}><Text style={styles.lessonTitle}>Your controls</Text><Text style={styles.nextText}>You will be able to export your account data, sign out, manage sessions and request account deletion. Until cloud accounts are connected, use Preferences & Data to export or restore the local record.</Text></View>
     {betaConsentAt?<View style={styles.notice}><Text style={styles.noticeText}>Acknowledged on this device: {new Date(betaConsentAt).toLocaleString()}. Account-linked consent will be requested again when secure beta accounts are enabled.</Text></View>:<View style={styles.lessonCard}><Pressable accessibilityRole="checkbox" accessibilityState={{checked:betaConsentChecked}} onPress={()=>setBetaConsentChecked(value=>!value)} style={styles.notice}><Text style={styles.noticeText}>{betaConsentChecked?'✓':'○'} I understand this is an unfinished educational beta, not medical advice, and that the current data is stored on this device.</Text></Pressable><AppButton label="Save beta acknowledgement on this device" disabled={!betaConsentChecked} onPress={()=>{void saveBetaConsent();}}/></View>}
 
@@ -678,7 +678,7 @@ export default function App() {
         <Text style={styles.heroSub}>Understand. Plan. Calculate. Track.</Text>
         <View style={styles.professorWelcomeCard}>
           <Image accessibilityLabel="Professor Lynch" source={require("./assets/professor-lynch-checklist.webp")} resizeMode="contain" style={styles.professorWelcomeAvatar}/>
-          <View style={styles.professorWelcomeBubble}><View style={styles.professorBubbleTail}/><Text style={styles.professorName}>A QUICK WORD FROM PROFESSOR LYNCH</Text><Text style={styles.professorMessage}>Choose a peptide to review its research context, then build a plan from the information you enter. I’ll help explain each step without choosing amounts or schedules for you.</Text></View>
+          <View style={styles.professorWelcomeBubble}><View style={styles.professorBubbleTail}/><Text style={styles.professorName}>A QUICK WORD FROM PROFESSOR LYNCH</Text><Text style={styles.professorMessage}>Choose a peptide to review its research context, then build a plan from the information you enter. I’ll help explain each step without choosing doses or schedules for you.</Text></View>
         </View>
 
         <View style={styles.featureRow}>
@@ -766,8 +766,8 @@ export default function App() {
       <Text style={styles.sectionTitle}>Choose a starting point</Text>
 
       {[
-        ["Basic Plan", "Recommended", "One amount and one schedule. The simplest place to start.", "Start with one simple step using the amount and schedule you enter. You can add more steps later if your plan changes.", "steady"],
-        ["Advanced Plan", "", "Use multiple steps when the amount or timing changes.", "Start with several editable steps. Each step can have its own amount, duration and schedule.", "staged"],
+        ["Basic Plan", "Recommended", "One dose and one schedule. The simplest place to start.", "Start with one simple step using the dose and schedule you enter. You can add more steps later if your plan changes.", "steady"],
+        ["Advanced Plan", "", "Use multiple steps when the dose or timing changes.", "Start with several editable steps. Each step can have its own dose, duration and schedule.", "staged"],
       ].map(([title, badge, sub, help, mode], idx) => (
         <Pressable accessibilityRole="button" accessibilityLabel={title} key={title} onPress={() => startPlan(mode as PlanMode)} style={styles.planOption}>
           <View style={[styles.planBars, { backgroundColor: idx === 0 ? COLORS.paleBlue : COLORS.palePurple }]}>
@@ -777,7 +777,7 @@ export default function App() {
             <View style={{flexDirection:"row",alignItems:"center",flexWrap:"wrap"}}>
               <Text style={styles.planOptionTitle}>{title}</Text>
               {!!badge && <Text style={styles.smallBadge}> · {badge}</Text>}
-              <ProfessorHelp title={title} body={help} note="This choice only sets up the plan format. It does not choose an amount or recommend a plan."/>
+              <ProfessorHelp title={title} body={help} note="This choice only sets up the plan format. It does not choose a dose or recommend a plan."/>
             </View>
             <Text style={styles.planOptionSub}>{sub}</Text>
           </View>

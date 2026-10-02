@@ -32,7 +32,7 @@ export function SchoolBasics(){
   {q:'What do syringe units mean?',a:'On a U-100 insulin syringe, 100 units represents 1.0 mL. The required draw still depends on the saved vial strength and diluent volume.'},
   {q:'Should inventory be entered as kits or vials?',a:'Enter individual vials. A kit containing 10 vials is entered as 10 individual vials so projections and logged consumption remain clear.'},
   {q:'Do scheduled events consume inventory?',a:'No. Inventory consumption follows events logged Taken. Scheduled, snoozed and skipped events do not consume supply.'},
-  {q:'What happens when I change an active peptide?',a:'Future-effective edits update upcoming events. Completed and skipped events retain their original amounts, calculations and timestamps as historical truth.'},
+  {q:'What happens when I change an active peptide?',a:'Future-effective edits update upcoming events. Completed and skipped events retain their original doses, calculations and timestamps as historical truth.'},
   {q:'How do PepPlan reminders work?',a:'Enabled plans prepare local reminders for scheduled events. An unresolved event can receive a follow-up and remains visible in Today until marked Taken, Skip or Remind Later.'},
   {q:'Are Common Research Practice references clinical recommendations?',a:'No. They are separately labelled research-practice starting references and must not be presented as approved or established clinical schedules.'},
   {q:'Where do profile facts come from?',a:'Each profile keeps evidence classes and source links visible. Major limitations should remain attached to the relevant route, formulation, population and study context.'},

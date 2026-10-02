@@ -143,7 +143,7 @@ test('Build Plan hero introduces Professor Lynch without selecting plan values',
  assert.match(app,/Peptide Research/);
  assert.match(app,/A QUICK WORD FROM PROFESSOR LYNCH/);
  assert.match(app,/review its research context/);
- assert.match(app,/without choosing amounts or schedules for you/);
+ assert.match(app,/without choosing doses or schedules for you/);
 });
 
 

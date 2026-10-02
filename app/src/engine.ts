@@ -25,7 +25,7 @@ export const prettyDate = (value: string) => parseDate(value)?.toLocaleDateStrin
 export const prettyTime = (value: string) => new Date(value).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
 export const timeLabel=(time:string)=>{if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))return 'Choose time';const [h,m]=time.split(':');return (Number(h)%12||12)+':'+m+(Number(h)<12?' AM':' PM');};
 export const displayedAmount=(stage:Pick<Stage,'amountMg'|'amountUnit'>)=>stage.amountMg.trim()&&Number.isFinite(Number(stage.amountMg))?String(Number((Number(stage.amountMg)*(stage.amountUnit==='mcg'?1000:1)).toFixed(8))):'';
-export const stageAmount=(stage:Pick<Stage,'amountMg'|'amountUnit'>)=>displayedAmount(stage)?displayedAmount(stage)+' '+(stage.amountUnit||'mg'):'Choose amount';
+export const stageAmount=(stage:Pick<Stage,'amountMg'|'amountUnit'>)=>displayedAmount(stage)?displayedAmount(stage)+' '+(stage.amountUnit||'mg'):'Choose dose';
 export const storedAmount=(text:string,unit?:string)=>text.trim()===''?'':Number.isFinite(Number(text))?String(Number(text)/(unit==='mcg'?1000:1)):text;
 export function scheduleSummary(s: Schedule | null) {
   if(!s)return 'Choose a schedule…';
@@ -108,7 +108,7 @@ export function validateDraft(d: Draft): string[] {
  if(!d.reviewed)errors.push('Review your plan before starting.');
  if(!parseDate(d.startDate))errors.push('Choose a valid start date.');
  if(!d.stages.length||d.stages.length>24)errors.push('Use between one and 24 stages.');
- d.stages.forEach((s,i)=>{if(!s.amountMg.trim()||!Number.isFinite(Number(s.amountMg))||Number(s.amountMg)<=0)errors.push('Stage '+(i+1)+': enter a positive amount.');const durationIssue=durationError(s);if(durationIssue)errors.push('Stage '+(i+1)+': '+durationIssue); const err=scheduleError(s.override||d.defaultSchedule);if(err)errors.push('Stage '+(i+1)+': '+err);});
+ d.stages.forEach((s,i)=>{if(!s.amountMg.trim()||!Number.isFinite(Number(s.amountMg))||Number(s.amountMg)<=0)errors.push('Stage '+(i+1)+': enter a positive dose.');const durationIssue=durationError(s);if(durationIssue)errors.push('Stage '+(i+1)+': '+durationIssue); const err=scheduleError(s.override||d.defaultSchedule);if(err)errors.push('Stage '+(i+1)+': '+err);});
  if(d.breakWeeks==='' || !/^\d+$/.test(d.breakWeeks)||Number(d.breakWeeks)>104)errors.push('Choose a planned break, or confirm no break.');
  if((d.cycleOnWeeks||d.cycleOffWeeks)&&(!/^\d+$/.test(d.cycleOnWeeks||'')||!/^\d+$/.test(d.cycleOffWeeks||'')||Number(d.cycleOnWeeks)<1||Number(d.cycleOffWeeks)<1||Number(d.cycleOnWeeks)>104||Number(d.cycleOffWeeks)>104))errors.push('Choose valid repeating cycle weeks, or turn the repeating cycle off.');
  if(!calculate(d.vialMg,d.waterMl,'1'))errors.push('Enter valid vial strength and diluent volume.');
@@ -225,7 +225,7 @@ export function decodeStore(raw:string):Store {
  for(const p of [value.active,...value.archives].filter(Boolean)){if(!Array.isArray(p.events)||!parseDate(p.startDate))throw Error('Saved event data could not be read. It has been preserved.');}
  // Older saves already store explicit mg values. Add presentation units without changing quantities.
  for(const p of [value.draft,value.active,...value.archives].filter(Boolean)){
-  for(const stage of p.stages){if(stage.duration&&(!['days','weeks'].includes(stage.duration.unit)||typeof stage.duration.value!=='string'))throw Error('Saved duration is unsupported. Your data is preserved.');stage.amountUnit??='mg';if(!['mg','mcg'].includes(stage.amountUnit))throw Error('Saved amount unit is unsupported. Your data is preserved.');}
+  for(const stage of p.stages){if(stage.duration&&(!['days','weeks'].includes(stage.duration.unit)||typeof stage.duration.value!=='string'))throw Error('Saved duration is unsupported. Your data is preserved.');stage.amountUnit??='mg';if(!['mg','mcg'].includes(stage.amountUnit))throw Error('Saved dose unit is unsupported. Your data is preserved.');}
   for(const event of p.events||[]){event.amountUnit??=p.stages[event.stageIndex]?.amountUnit||'mg';if(!['mg','mcg'].includes(event.amountUnit))throw Error('Saved event unit is unsupported. Your data is preserved.');}
  }
  return value;
@@ -249,8 +249,8 @@ export function sameSchedule(a:Schedule|null,b:Schedule|null){
 export type TaperOptions={type:'fixed'|'percentage';increment:string;amountUnit?:'mg'|'mcg';period:string;periodUnit:'days'|'weeks';steps:string};
 export function buildTaperStages(first:Stage,options:TaperOptions):Stage[]{
  const start=Number(first.amountMg),displayIncrement=Number(options.increment),increment=(options.amountUnit??first.amountUnit)==='mcg'?displayIncrement/1000:displayIncrement,period=Number(options.period),steps=Number(options.steps);
- if(!Number.isFinite(start)||start<=0)throw Error('Enter a positive starting amount.');
- if(!Number.isFinite(displayIncrement)||displayIncrement<=0)throw Error('Enter a positive amount change.');
+ if(!Number.isFinite(start)||start<=0)throw Error('Enter a positive starting dose.');
+ if(!Number.isFinite(displayIncrement)||displayIncrement<=0)throw Error('Enter a positive dose change.');
  if(!Number.isSafeInteger(period)||period<1||(options.periodUnit==='days'?period>728:period>104))throw Error('Choose a valid stage length.');
  if(!Number.isSafeInteger(steps)||steps<2||steps>24)throw Error('Choose 2–24 stages.');
  return Array.from({length:steps},(_,index)=>{const amount=options.type==='fixed'?start+increment*index:start*Math.pow(1+displayIncrement/100,index);return {...first,id:uid(),amountMg:String(Number(amount.toFixed(8))),amountUnit:options.amountUnit??first.amountUnit??'mg',weeks:options.periodUnit==='weeks'?String(period):'',duration:{value:String(period),unit:options.periodUnit},override:index===0?first.override:null};});

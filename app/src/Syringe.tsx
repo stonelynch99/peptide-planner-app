@@ -10,7 +10,7 @@ export default function Syringe({result,amount,glow=false,capacityOverride,onCap
  const {capacity,x,exceeds,minor,major}=syringeScale(result?.units??null,capacityOverride===undefined?selected:capacityOverride);
  const ticks=Array.from({length:capacity/minor+1},(_,i)=>i*minor),labels=Array.from({length:capacity/major+1},(_,i)=>i*major);
  return <View style={s.card}>
-  <View style={{flexDirection:"row",alignItems:"center",marginBottom:10}}><Text style={s.label}>SYRINGE CAPACITY · U-100</Text><ProfessorHelp title="Syringe capacity" body="A U-100 syringe has 100 units per millilitre. The 0.3, 0.5 and 1.0 mL choices show 30, 50 and 100-unit barrels so the same calculated draw can be viewed on the matching scale." note="Changing the displayed syringe size does not change the calculated amount or concentration."/></View>
+  <View style={{flexDirection:"row",alignItems:"center",marginBottom:10}}><Text style={s.label}>SYRINGE CAPACITY · U-100</Text><ProfessorHelp title="Syringe capacity" body="A U-100 syringe has 100 units per millilitre. The 0.3, 0.5 and 1.0 mL choices show 30, 50 and 100-unit barrels so the same calculated draw can be viewed on the matching scale." note="Changing the displayed syringe size does not change the dose or concentration."/></View>
   <View style={{flexDirection:'row',gap:6,alignSelf:'stretch',marginBottom:14}}>{([30,50,100] as const).map(size=><Pressable key={size} accessibilityRole="radio" accessibilityLabel={(size/100).toFixed(1)+' mL syringe'} accessibilityState={{checked:capacity===size}} aria-checked={capacity===size} onPress={()=>{setSelected(size);onCapacityChange?.(size)}} style={[{flex:1,paddingVertical:12,borderRadius:12,alignItems:'center',backgroundColor:'#f2f6fc'},capacity===size&&u.selected]}><Text style={{fontSize:14,color:'#12204a',fontWeight:'700'}}>{(size/100).toFixed(1)} mL</Text></Pressable>)}</View>
   <Text style={s.label}>{exceeds?'DRAW EXCEEDS SELECTED SYRINGE':'DRAW TO'}</Text>
   <Text style={s.answer} testID="syringe-units">{result?Number(result.units.toFixed(3)):'—'} UNITS</Text>
@@ -26,8 +26,8 @@ export default function Syringe({result,amount,glow=false,capacityOverride,onCap
    {result&&<><Path d={`M ${x-6} 43 L ${x+6} 43 L ${x} 55 Z`} fill="#007ba6"/><Line testID="syringe-draw-mark" x1={x} x2={x} y1="55" y2="123" stroke="#007ba6" strokeWidth="3"/><Rect x={x-2} y="83" width="4" height="27" fill="#007ba6"/></>}
    <SvgText x="165" y="167" textAnchor="middle" fontSize="12" fill="#657794">{(capacity/100).toFixed(1)} mL U-100 · 0–{capacity} units</SvgText>
   </Svg>
-  <Text style={s.secondary}>Amount: {quantityLabel(amount)}</Text>
-  <Text style={s.secondary}>{result?`${Number(result.volume.toFixed(5))} mL   ·   ${Number(result.concentration.toFixed(3))} mg/mL`:'Enter vial strength, diluent volume and amount.'}</Text>
+  <Text style={s.secondary}>Dose: {quantityLabel(amount)}</Text>
+  <Text style={s.secondary}>{result?`${Number(result.volume.toFixed(5))} mL   ·   ${Number(result.concentration.toFixed(3))} mg/mL`:'Enter vial strength, diluent volume and dose.'}</Text>
   {exceeds&&<Text accessibilityRole="alert" style={s.note}>{result!.units<=100?'Choose a larger syringe to fit this draw.':'This draw exceeds all available syringe sizes. Review the calculation.'} The marker is capped at {capacity} units.</Text>}
   {glow&&result&&amount!==null&&<View style={s.blend}><Text style={s.label}>GLOW · AT THIS DRAW</Text>{glowComponents(toMg(amount)).map(c=><Text key={c.name} style={s.secondary}>{c.name}: {Number(c.amountMg.toFixed(4))} mg</Text>)}<Text style={s.note}>Fixed 5:1:1 component arithmetic; not clinically validated dosing recommendations.</Text></View>}
  </View>;
