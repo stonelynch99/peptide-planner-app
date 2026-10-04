@@ -101,3 +101,44 @@ test('confirmed identical cloud review records a common baseline for later autom
  const changed=reviewSync('one',current,cloud);
  assert.equal(decideAutomaticSync(changed.localPayload,changed.cloudPayload,cloud.revision,baseline),'upload');
 });
+
+
+{
+ const vm=require('node:vm'),ts=require('./app/node_modules/typescript');
+ function sharingUI({os='web',webShare,clipboard,nativeAction='sharedAction'}={}){
+  let states=[],slot=0,opened=[],shared=[],copied=[];
+  const react={createElement:(type,props,...children)=>({type,props:props||{},children}),useRef:value=>({current:value}),useState:value=>{const i=slot++;if(!(i in states))states[i]=value;return [states[i],next=>states[i]=next];},useEffect:()=>{}};
+  const rn={Platform:{OS:os},StyleSheet:{create:x=>x},Linking:{openURL:async url=>opened.push(url)},Share:{sharedAction:'sharedAction',share:async data=>{shared.push(data);return{action:nativeAction};}}};
+  const navigator={...(webShare?{share:async data=>shared.push(data)}:{}),...(clipboard?{clipboard:{writeText:async text=>copied.push(text)}}:{})};
+  const sandbox={module:{exports:{}},exports:null,navigator,URL,require:name=>name==='react'?{...react,default:react}:name==='react-native'?rn:name==='./contracts'?accountContracts:name==='./client'?{cloudConfig:{status:'ready'},readReferralSummary:async()=>accountContracts.referralSummary(heldReferral(),'member')}:{}};
+  sandbox.exports=sandbox.module.exports;
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync('app/src/cloud/BetaAccount.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,sandbox);
+  const render=()=>{slot=0;return sandbox.module.exports.ReferralsRewardsPanel({userId:'member'});};
+  const find=(tree,label)=>{if(tree?.props?.accessibilityLabel===label)return tree;for(const child of tree?.children?.flat(Infinity)||[]){const found=find(child,label);if(found)return found;}};
+  return {states,opened,shared,copied,press:async label=>{const target=find(render(),label);assert.ok(target,label);await target.props.onPress();await new Promise(resolve=>setImmediate(resolve));},render};
+ }
+ test('app share uses web share sheet with only public planner address',async()=>{const f=sharingUI({webShare:true});await f.press('Share EZPep Planner');assert.equal(f.shared[0].url,accountContracts.PLANNER_SHARE_URL);assert.doesNotMatch(JSON.stringify(f.shared),/reserved123|synthetic-token|member/);assert.match(f.states[2],/paused/);});
+ test('app share falls back to clipboard and handles unavailable sharing honestly',async()=>{const f=sharingUI({clipboard:true});await f.press('Share EZPep Planner');assert.match(f.copied[0],/https:\/\/app.ezpepplanner.com\//);assert.match(f.states[2],/copied/);const g=sharingUI();await g.press('Share EZPep Planner');assert.match(g.states[2],/Copy this planner address/);});
+ test('native share cancellation never reports successful sharing',async()=>{const f=sharingUI({os:'android',nativeAction:'dismissedAction'});await f.press('Share EZPep Planner');assert.equal(f.shared.length,1);assert.equal(f.states[2],'');});
+ test('app website account button opens dedicated account area and totals load only on request',async()=>{const f=sharingUI();assert.equal(f.states.length,0);f.render();assert.equal(f.states[0],null);await f.press('Open website account');assert.deepEqual(f.opened,[accountContracts.WEBSITE_ACCOUNT_URL]);await f.press('Refresh my referral totals');assert.equal(f.states[0].code,'reserved123');});
+}
+
+const accountContracts=require('./app/src/cloud/contracts.ts');
+function heldReferral(id='member'){return {schemaVersion:1,mode:'preparation',account:{id,role:'member'},holds:{publicSignup:false,liveBilling:false,referrals:false,promotions:false,payouts:false},sharing:{appUrl:accountContracts.PLANNER_SHARE_URL,referralUrl:null,state:'held',code:'reserved123'},totals:{currency:'cad',signups:0,pendingMonths:0,earnedMonths:0,pendingCents:0,earnedCents:0,paidCents:0,owedCents:0}};}
+test('app referral summary accepts only own verified preparation records for each role',()=>{for(const role of ['member','influencer','owner']){const v=heldReferral();v.account.role=role;v.totals.signups=2;assert.equal(accountContracts.referralSummary(v,'member').role,role);assert.equal(accountContracts.referralSummary(v,'member').signups,2);assert.throws(()=>accountContracts.referralSummary(v,'other'));}});
+test('app referral sharing refuses activation, unknown holds and untrusted destinations',()=>{const mutations=[v=>v.holds.referrals=true,v=>delete v.holds.payouts,v=>v.holds.extra=false,v=>v.sharing.referralUrl='https://example.com/?ref=123',v=>v.sharing.appUrl='https://example.com/',v=>v.sharing.state='active',v=>v.mode='live'];for(const mutate of mutations){const v=heldReferral();mutate(v);assert.throws(()=>accountContracts.referralSummary(v,'member'));}});
+test('app referral summary rejects corrupt or misleading totals',()=>{for(const invalid of [-1,Infinity,1.5,'10',null,undefined]){const v=heldReferral();v.totals.earnedCents=invalid;assert.throws(()=>accountContracts.referralSummary(v,'member'));}const v=heldReferral();v.totals.currency='usd';assert.throws(()=>accountContracts.referralSummary(v,'member'));});
+test('app account bridge fixes destinations without transporting account credentials in URLs',()=>{assert.equal(accountContracts.WEBSITE_ACCOUNT_URL,'https://app.ezpepplanner.com/website-preview/#account');assert.equal(new URL(accountContracts.WEBSITE_ACCOUNT_URL).search,'');assert.equal(accountContracts.PLANNER_SHARE_URL,'https://app.ezpepplanner.com/');});
+{
+ const vm=require('node:vm'),ts=require('./app/node_modules/typescript');
+ function appAccountFixture({swap=false,reject=false}={}){
+  let checks=0,calls=[];const fake={auth:{getUser:async()=>({data:{user:{id:swap&&++checks>1?'changed':'member'}}}),getSession:async()=>({data:{session:{user:{id:'member'},access_token:'synthetic-token'}}})},rpc:async()=>({data:true})};
+  const sandbox={module:{exports:{}},exports:null,process:{env:{}},fetch:async(url,options)=>{calls.push({url,options});return {ok:!reject,json:async()=>heldReferral()};},AbortSignal,URL,require:name=>name==='@supabase/supabase-js'?{createClient:()=>fake}:name==='./config'?{validateCloudConfig:()=>({status:'ready',url:'https://example.invalid',key:'public'})}:name==='./contracts'?accountContracts:{}};
+  sandbox.exports=sandbox.module.exports;
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync('app/src/cloud/client.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,sandbox);
+  return {calls,read:sandbox.module.exports.readReferralSummary};
+ }
+ test('app account request uses fixed authenticated dashboard and sends no planner payload',async()=>{const f=appAccountFixture();assert.equal((await f.read('member')).signups,0);assert.equal(f.calls.length,1);const {url,options}=f.calls[0];assert.equal(url,'https://builder-pepplan.aurapep.ca/ezpep-accounts/dashboard');assert.equal(options.body,'{}');assert.equal(options.credentials,'omit');assert.equal(options.redirect,'error');assert.equal(options.headers.authorization,'Bearer synthetic-token');});
+ test('app account bridge rejects switched accounts before revealing totals',async()=>{const f=appAccountFixture({swap:true});await assert.rejects(f.read('member'),/Account changed/);assert.equal(f.calls.length,1);const g=appAccountFixture();await assert.rejects(g.read('other'),/Account changed/);assert.equal(g.calls.length,0);});
+ test('app account bridge rejects failed service responses',async()=>{await assert.rejects(appAccountFixture({reject:true}).read('member'),/unavailable/);});
+}

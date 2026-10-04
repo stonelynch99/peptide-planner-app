@@ -2,7 +2,7 @@ import {ATTACHMENT_BUCKET,submitRecoverableFeedback,feedbackDeadline,type Screen
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {createClient} from '@supabase/supabase-js';
 import {validateCloudConfig} from './config';
-import {AUTH_STORAGE_KEY,CONSENT_VERSION,feedbackRow,type AuthPort,type FeedbackInput} from './contracts';
+import {referralSummary,AUTH_STORAGE_KEY,CONSENT_VERSION,feedbackRow,type AuthPort,type FeedbackInput} from './contracts';
 import type {Database} from './database';
 export const cloudConfig = validateCloudConfig(process.env.EXPO_PUBLIC_SUPABASE_URL, process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
 const client = cloudConfig.status === 'ready' ? createClient<Database>(cloudConfig.url,cloudConfig.key,{auth:{storage:AsyncStorage,storageKey:AUTH_STORAGE_KEY,persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,flowType:'pkce'}}) : null;
@@ -192,6 +192,18 @@ export async function callReminderBackend(expectedUserId:string,body:Record<stri
  }
  if(data?.error)throw Object.assign(Error(data.error),{code:data.error});
  return data;
+}
+
+
+export async function readReferralSummary(expectedUserId:string){
+ if(await eligibleUser()!==expectedUserId)throw Error('Account changed. Refresh from your current account.');
+ const api=configured(),{data,error}=await api.auth.getSession();
+ if(error||data.session?.user.id!==expectedUserId)throw Error('Sign in to your existing account.');
+ const response=await fetch('https://builder-pepplan.aurapep.ca/ezpep-accounts/dashboard',{method:'POST',headers:{authorization:'Bearer '+data.session.access_token,'content-type':'application/json'},body:'{}',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(25000)});
+ if(!response.ok)throw Error('Referral status is unavailable. Your planner data is unchanged.');
+ const value=await response.json();
+ if(await eligibleUser()!==expectedUserId)throw Error('Account changed. Refresh from your current account.');
+ return referralSummary(value,expectedUserId);
 }
 
 // Fixed EZPep-only TEST service. Supabase session remains in its existing storage.

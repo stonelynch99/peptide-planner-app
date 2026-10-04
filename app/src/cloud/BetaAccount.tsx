@@ -1,10 +1,35 @@
 import {FeedbackReview} from './FeedbackReview';
 import React,{useEffect,useMemo,useState} from 'react';
-import {AppState,Image,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View,Linking,useWindowDimensions} from 'react-native';
+import {AppState,Image,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View,Linking,Platform,Share,useWindowDimensions} from 'react-native';
 import {EZPEP_LOCKUP_DATA_URI} from '../brand-assets';
 import {AuthController} from './auth-controller';
-import {acknowledgeCloudConsent,authPort,cloudConfig,readBetaAdminDashboard,type BetaAdminUser} from './client';
-import type {AccountState} from './contracts';
+import {acknowledgeCloudConsent,readReferralSummary,authPort,cloudConfig,readBetaAdminDashboard,type BetaAdminUser} from './client';
+import {WEBSITE_ACCOUNT_URL,PLANNER_SHARE_URL,type ReferralSummary,type AccountState} from './contracts';
+
+export function ReferralsRewardsPanel({userId}:{userId:string}){
+ const [view,setView]=useState<ReferralSummary|null>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ const request=React.useRef(0),currentUser=React.useRef(userId);currentUser.current=userId;
+ useEffect(()=>{request.current++;setView(null);setMessage('');setBusy(false);return()=>{request.current++;};},[userId]);
+ const refresh=async()=>{if(busy)return;const seq=++request.current,id=userId;setView(null);setBusy(true);setMessage('');try{const next=await readReferralSummary(id);if(seq===request.current&&id===currentUser.current)setView(next);}catch{if(seq===request.current&&id===currentUser.current)setMessage('Account totals could not be loaded. Try again; your planner data is unchanged.');}finally{if(seq===request.current&&id===currentUser.current)setBusy(false);}};
+ const open=async()=>{try{await Linking.openURL(WEBSITE_ACCOUNT_URL);}catch{setMessage('Open '+WEBSITE_ACCOUNT_URL+' in your browser.');}};
+ const share=async()=>{try{const text='EZPep Planner — learn, plan and track. '+PLANNER_SHARE_URL;
+   if(Platform.OS==='web'){if(typeof navigator.share==='function'){await navigator.share({title:'EZPep Planner',text,url:PLANNER_SHARE_URL});setMessage('Share sheet opened. Referral rewards remain paused.');}else if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);setMessage('Planner link copied. Referral rewards remain paused.');}else setMessage('Copy this planner address: '+PLANNER_SHARE_URL);}
+   else {const result=await Share.share({title:'EZPep Planner',message:text});if(result.action===Share.sharedAction)setMessage('Planner link shared. Referral rewards remain paused.');}
+ }catch(error){if((error as any)?.name!=='AbortError')setMessage('Sharing could not finish. Copy '+PLANNER_SHARE_URL+' instead.');}};
+ const action=(label:string,onPress:()=>void,disabled=false)=><Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} accessibilityState={{disabled}} onPress={onPress} style={[s.button,disabled&&{opacity:.5}]}><Text style={s.buttonText}>{label}</Text></Pressable>;
+ const money=(cents:number)=>'CAD $'+(cents/100).toFixed(2);
+ return <View testID="referrals-rewards-panel" style={s.accountSection}><Text style={s.accountKicker}>YOUR WEBSITE ACCOUNT</Text><Text accessibilityRole="header" style={s.sectionTitle}>Referrals & rewards</Text><Text style={s.text}>Your website account is the home for membership, referrals and rewards. It uses your existing planner email and password.</Text>
+ {action(view?.role==='owner'?'Open owner control panel':view?.role==='influencer'?'Open influencer dashboard':'Open website account',()=>void open())}
+ {view&&<><Text style={s.caption}>{view.role==='owner'?'Owner access':view.role==='influencer'?'Influencer access':'Member access'} · verified account records</Text><Text style={s.text}>{view.signups} referred signups</Text>
+ {view.role==='member'?<Text style={s.text}>Pro months: {view.pendingMonths} pending · {view.earnedMonths} earned</Text>:<><Text style={s.text}>Commissions: {money(view.pendingCents)} pending · {money(view.earnedCents)} earned</Text><Text style={s.text}>{money(view.owedCents)} owed · {money(view.paidCents)} paid</Text></>}
+ <Text style={s.caption}>These totals belong to your account. The owner website dashboard also shows the whole program.</Text><Text style={s.caption}>Reserved referral code: {view.code}. This code is not active yet.</Text></>}
+ {action(busy?'Loading account totals…':'Refresh my referral totals',()=>void refresh(),busy)}
+ <Text style={s.reassurance}>Referral activation and earning are paused. Sharing below sends the planner link without referral attribution or reward promises.</Text>
+ {action('Share EZPep Planner',()=>void share())}
+ {!!message&&<Text accessibilityLiveRegion="polite" style={s.caption}>{message}</Text>}
+ </View>;
+}
+
 export function useBetaAccount(){
   const [state,setState]=useState<AccountState>({status:cloudConfig.status==='ready'?'loading':cloudConfig.status});
   const controller=useMemo(()=>cloudConfig.status==='ready'?new AuthController(authPort,setState):null,[]);
