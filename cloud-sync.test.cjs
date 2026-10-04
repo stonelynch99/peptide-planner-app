@@ -142,3 +142,53 @@ test('app account bridge fixes destinations without transporting account credent
  test('app account bridge rejects switched accounts before revealing totals',async()=>{const f=appAccountFixture({swap:true});await assert.rejects(f.read('member'),/Account changed/);assert.equal(f.calls.length,1);const g=appAccountFixture();await assert.rejects(g.read('other'),/Account changed/);assert.equal(g.calls.length,0);});
  test('app account bridge rejects failed service responses',async()=>{await assert.rejects(appAccountFixture({reject:true}).read('member'),/unavailable/);});
 }
+
+{
+ const vm=require('node:vm'),ts=require('./app/node_modules/typescript');
+ function menuFixture(status='eligible',owner=false){
+  const source=fs.readFileSync('app/App.tsx','utf8'),screens=[],sections=[];
+  const start=source.indexOf('  const renderMore = () => {'),end=source.indexOf('  const renderGuide = () => (',start);
+  assert(start>=0&&end>start);
+  const navStart=source.indexOf('function BottomNav('),navEnd=source.indexOf('export default function App()',navStart);
+  const homeStart=source.indexOf("{settingsSection==='home'&&<>")+"{settingsSection==='home'&&<>".length,homeEnd=source.indexOf('</>}',homeStart);
+  const code=source.slice(navStart,navEnd)+source.slice(start,end)+'\nconst renderSettingsHome=()=> (<>'+source.slice(homeStart,homeEnd)+'</>);\nmodule.exports={renderMore,renderReferrals,renderSettingsHome,BottomNav};';
+  const react={createElement:(type,props,...children)=>({type,props:props||{},children}),Fragment:'Fragment'};
+  const sandbox={module:{exports:{}},React:react,ScrollView:'ScrollView',Pressable:'Pressable',Text:'Text',View:'View',Card:'Card',AppButton:'AppButton',NavIcon:'NavIcon',ReferralsRewardsPanel:'ReferralsRewardsPanel',styles:{},u:{},navColors:{},betaAdmin:owner,betaAccount:{state:{status,userId:'synthetic-account'}},setScreen:s=>screens.push(s),setSettingsSection:s=>sections.push(s),openBetaFeedback:origin=>screens.push('feedback:'+origin)};
+  vm.runInNewContext(ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,sandbox);
+  const walk=tree=>tree&&typeof tree==='object'?[tree,...(tree.children||[]).flat(Infinity).flatMap(walk)]:[];
+  const find=(tree,label)=>walk(tree).find(x=>x.props.accessibilityLabel===label||x.props.label===label);
+  return {...sandbox.module.exports,screens,sections,walk,find};
+ }
+ test('More routes referrals to a dedicated screen without embedding account records',()=>{
+  const f=menuFixture(),tree=f.renderMore();assert.equal(f.walk(tree).filter(x=>x.type==='ReferralsRewardsPanel').length,0);
+  f.find(tree,'Referrals & rewards').props.onPress();assert.deepEqual(f.screens,['referrals']);
+  f.find(tree,'Your account & cloud').props.onPress();assert.equal(f.screens.at(-1),'profile');
+  f.find(tree,'Beta Feedback').props.onPress();assert.equal(f.screens.at(-1),'feedback:More');
+ });
+ test('referral screen binds only the eligible current account and returns to More',()=>{
+  const f=menuFixture(),tree=f.renderReferrals(),panels=f.walk(tree).filter(x=>x.type==='ReferralsRewardsPanel');
+  assert.equal(panels.length,1);assert.equal(panels[0].props.userId,'synthetic-account');assert.equal(panels[0].props.key,'synthetic-account');
+  f.find(tree,'Back to More').props.onPress();assert.deepEqual(f.screens,['more']);
+ });
+ test('referral screen shows sign-in guidance rather than records for every noneligible state',()=>{
+  for(const state of ['signedOut','loading','error','denied','unconfigured']){
+   const f=menuFixture(state),tree=f.renderReferrals();assert.equal(f.walk(tree).filter(x=>x.type==='ReferralsRewardsPanel').length,0);
+   f.find(tree,'Your account & cloud').props.onPress();assert.deepEqual(f.screens,['profile']);
+  }
+ });
+ test('Settings referral shortcut leaves data and update section navigation intact',()=>{
+  const f=menuFixture(),tree=f.renderSettingsHome();f.find(tree,'Referrals & rewards').props.onPress();assert.deepEqual(f.screens,['referrals']);
+  const rows=f.walk(tree).filter(x=>x.type==='Pressable');assert.equal(rows.length,4);rows.forEach(x=>x.props.onPress());
+  assert.deepEqual(f.sections,['data','updates','onboarding','about']);
+ });
+ test('More owner dashboard stays restricted to the verified beta owner',()=>{
+  assert.equal(menuFixture('eligible',false).find(menuFixture('eligible',false).renderMore(),'Beta Dashboard'),undefined);
+  const f=menuFixture('eligible',true);f.find(f.renderMore(),'Beta Dashboard').props.onPress();assert.deepEqual(f.screens,['betaDashboard']);
+ });
+ test('dedicated referral screen retains More as selected bottom navigation',()=>{
+  const f=menuFixture(),tree=f.BottomNav({active:'referrals',setScreen:s=>f.screens.push(s)}),tabs=f.walk(tree).filter(x=>x.props.accessibilityRole==='tab');
+  assert.deepEqual(tabs.filter(x=>x.props.accessibilityState.selected).map(x=>x.props.accessibilityLabel),['More']);
+  f.find(tree,'TODAY').props.onPress();assert.deepEqual(f.screens,['tracker']);
+ });
+}
+

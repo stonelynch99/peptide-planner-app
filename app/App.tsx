@@ -62,7 +62,7 @@ import {decodePlannerStore,encodePlannerStore,previewPeptideLibraryCsv,externalS
 type Experience = "new" | "familiar" | "experienced";
 type FirstGoal = "learn" | "research" | "setup" | "track";
 type OnboardingProfile = { experience: Experience; goal: FirstGoal };
-type Screen = "homeScreen" | "welcome" | "activeEditor" | "profile" | "settings" | "betaFeedback" | "betaPrivacy" | "betaDashboard" | "shop" | "plans" | "planInventory" | "planDetail" | "planTracker" | "planHistory" | "school" | "schoolDetail" | "schoolMore" | "schoolSources" | "guide" | "detail" | "plan" | "calc" | "tracker" | "review" | "schedule" | "inventory" | "reminders" | "history" | "dataImport" | "more";
+type Screen = "homeScreen" | "welcome" | "activeEditor" | "profile" | "settings" | "betaFeedback" | "betaPrivacy" | "betaDashboard" | "shop" | "plans" | "planInventory" | "planDetail" | "planTracker" | "planHistory" | "school" | "schoolDetail" | "schoolMore" | "schoolSources" | "guide" | "detail" | "plan" | "calc" | "tracker" | "review" | "schedule" | "inventory" | "reminders" | "history" | "dataImport" | "referrals" | "more";
 
 const COLORS = {
   ink: "#0E1C4A",
@@ -123,7 +123,7 @@ function BottomNav({ active, setScreen }: { active: Screen; setScreen: (s: Scree
   return (
     <View testID="bottom-navigation" style={styles.nav}>
       {items.map((item) => {
-        const tab = active === "schoolDetail" || active === "schoolMore" || active === "schoolSources" ? "school" : active === "detail" ? "guide" : ["plan", "planDetail", "planInventory", "calc", "review", "schedule"].includes(active) ? "plans" : ["history","planTracker","planHistory"].includes(active) ? "tracker" : ["inventory", "reminders","profile","settings","homeScreen"].includes(active) ? "more" : active;
+        const tab = active === "schoolDetail" || active === "schoolMore" || active === "schoolSources" ? "school" : active === "detail" ? "guide" : ["plan", "planDetail", "planInventory", "calc", "review", "schedule"].includes(active) ? "plans" : ["history","planTracker","planHistory"].includes(active) ? "tracker" : ["inventory", "reminders","profile","settings","homeScreen","referrals"].includes(active) ? "more" : active;
         const isActive = tab === item.key;
         return (
           <Pressable accessibilityRole="tab" accessibilityLabel={item.label} accessibilityState={{ selected: isActive }} key={item.key} onPress={() => setScreen(item.key)} style={styles.navItem}>
@@ -650,17 +650,27 @@ export default function App() {
   const renderMore = () => {
     const groups:{title:string;rows:{label:string;detail:string;target:Screen}[]}[]=[
       {title:'YOUR PLANNER',rows:[{label:'History',detail:'Completed and skipped events',target:'history'},{label:'Inventory',detail:'Individual vials across active plans',target:'inventory'},{label:'Notifications',detail:'Reminder timing and device permissions',target:'reminders'}]},
-      {title:'YOUR ACCOUNT',rows:[{label:'Your account & cloud',detail:'Sign-in, cloud saving and device transfer',target:'profile'},{label:'Settings',detail:'Data, updates, Quick Start and app information',target:'settings'}]},
+      {title:'YOUR ACCOUNT',rows:[{label:'Your account & cloud',detail:'Sign-in, cloud saving and device transfer',target:'profile'},{label:'Referrals & rewards',detail:'Share EZPep and open your website account',target:'referrals'},{label:'Settings',detail:'Data, updates, Quick Start and app information',target:'settings'}]},
       {title:'HELP & FEEDBACK',rows:[{label:'Beta Feedback',detail:'Report a problem or suggestion privately',target:'betaFeedback'},{label:'Beta privacy & consent',detail:'Review participation and data handling',target:'betaPrivacy'},{label:'Add EZPep to Home Screen',detail:'Installation steps for your phone',target:'homeScreen'}]}
     ];
     if(betaAdmin)groups.push({title:'OWNER',rows:[{label:'Beta Dashboard',detail:'Tester access and aggregate beta usage',target:'betaDashboard'}]});
     return <ScrollView contentContainerStyle={styles.scrollContent}>
       <Text style={[styles.kicker,{marginTop:20}]}>MORE</Text><Text style={styles.detailTitle}>Your EZPep Planner</Text><Text style={styles.detailMeta}>Everyday tools, your account and help.</Text>
       {groups.map(group=><View key={group.title}><Text style={[styles.kicker,{marginTop:24,marginBottom:8}]}>{group.title}</Text>{group.rows.map(row=><Pressable accessibilityRole="button" accessibilityLabel={row.label} key={row.label} style={styles.moreRow} onPress={()=>row.target==='betaFeedback'?openBetaFeedback('More'):setScreen(row.target)}><View style={{flex:1}}><Text style={styles.planOptionTitle}>{row.label}</Text><Text style={styles.smallBadge}>{row.detail}</Text></View><Text style={styles.linkArrow}>›</Text></Pressable>)}</View>)}
-      {betaAccount.state.status==='eligible'&&<ReferralsRewardsPanel key={betaAccount.state.userId!} userId={betaAccount.state.userId!}/>}
       <Text style={[styles.smallBadge,{marginTop:20}]}>Your plans save on this device first. Review cloud status before transferring to another device.</Text>
     </ScrollView>;
   };
+
+  const renderReferrals = () => (
+    <ScrollView contentContainerStyle={styles.scrollContent}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Back to More" onPress={()=>setScreen('more')}><Text style={styles.back}>‹ More</Text></Pressable>
+      <Text style={styles.kicker}>YOUR ACCOUNT</Text><Text style={styles.detailTitle}>Referrals & rewards</Text>
+      <Text style={styles.detailMeta}>Member rewards are free Pro months. Influencer commissions are shown separately in the website account.</Text>
+      {betaAccount.state.status==='eligible'
+        ? <ReferralsRewardsPanel key={betaAccount.state.userId!} userId={betaAccount.state.userId!}/>
+        : <Card><Text style={u.heading}>Use your existing EZPep account</Text><Text style={u.body}>Sign in or verify your current account before loading referral records. Your saved plans stay on this device.</Text><AppButton label="Your account & cloud" onPress={()=>setScreen('profile')}/></Card>}
+    </ScrollView>
+  );
 
   const renderGuide = () => (
     <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -835,6 +845,7 @@ export default function App() {
         {screen === "schoolMore" && renderSchoolDetail(true)}
         {screen === "schoolSources" && renderSources()}
         {screen === "more" && renderMore()}
+         {screen === "referrals" && renderReferrals()}
          {screen==="homeScreen"&&<ScrollView contentContainerStyle={styles.scrollContent}><Pressable accessibilityRole="button" onPress={()=>setScreen("more")}><Text style={styles.back}>‹ More</Text></Pressable> <Card><Text style={u.heading}>Add EZPep to your Home Screen</Text>
  <Text style={u.body}>Keep EZPep one tap away, like an app.</Text>
  <Text style={u.heading}>Android · Chrome</Text>
@@ -855,6 +866,7 @@ export default function App() {
  <Text style={styles.detailMeta}>Choose one area. Your plans and account stay separate.</Text>
  {([{key:'data',title:'Backup & data',detail:'Import, export and restore your planner'},{key:'updates',title:'App updates',detail:'Check the installed version safely'},{key:'onboarding',title:'Quick Start',detail:'Revisit the welcome guide'},{key:'about',title:'About EZPep',detail:'App information and planning controls'}] as const).map(item=><Pressable key={item.key} accessibilityRole="button" onPress={()=>setSettingsSection(item.key)} style={styles.moreRow}><View style={{flex:1}}><Text style={styles.planOptionTitle}>{item.title}</Text><Text style={styles.smallBadge}>{item.detail}</Text></View><Text style={styles.linkArrow}>›</Text></Pressable>)}
  <AppButton label="Your account & cloud" secondary onPress={()=>setScreen('profile')}/>
+ <AppButton label="Referrals & rewards" secondary onPress={()=>setScreen('referrals')}/>
  </>}
  {settingsSection==='data'&&<View style={styles.lessonCard}><Text style={styles.lessonTitle}>Keep a private copy</Text><Text style={styles.nextText}>Your planner saves locally first. Cloud saving is managed in Your account. Review cloud status before moving devices. Restore only after reviewing its validated preview.</Text><AppButton label="Import data from another app" onPress={chooseImportFile}/><AppButton label="Restore EZPep backup" secondary onPress={chooseBackupFile}/><AppButton label="Export local backup" secondary onPress={exportLocalBackup}/><Text style={styles.smallBadge}>Private exports may contain schedules and history. They are not uploaded automatically.</Text><AppButton label="Your account & cloud" secondary onPress={()=>setScreen('profile')}/></View>}
  {settingsSection==='onboarding'&&<View style={styles.lessonCard}><Text style={styles.lessonTitle}>Restart onboarding</Text><Text style={styles.nextText}>Review the welcome questions and choose a starting path. Your saved plans, history and settings are preserved.</Text><AppButton label="Restart Quick Start Onboarding" secondary onPress={restartOnboarding}/></View>}
