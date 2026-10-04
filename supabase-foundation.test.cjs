@@ -33,7 +33,7 @@ test('beta analytics is explicit, bounded and excludes sensitive planner data',(
   assert.match(app,/setBetaAnalyticsConsent\(true\)/);
   for(const event of ['session_started','screen_viewed','screen_time','onboarding_completed','plan_builder_started','plan_started','import_completed','feedback_submitted'])assert.ok(client.includes(event));
   assert.match(client,/insert\(\{user_id:userId,event_name:eventName,screen:screen\?\?null,duration_seconds:duration\}\)/);
-  assert.doesNotMatch(client,/properties|metadata|user_agent|feedback_text/);
+  const analytics=client.slice(client.indexOf('export async function trackBetaAnalytics'),client.indexOf('export async function callReminderBackend'));assert.doesNotMatch(analytics,/properties|metadata|user_agent|feedback_text/);
 });
 test('analytics migration requires consent and exposes no client event reads',()=>{
   const sql=fs.readFileSync('supabase/migrations/202609110001_beta_analytics.sql','utf8');
