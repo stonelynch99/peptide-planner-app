@@ -298,4 +298,25 @@ test('whole sign-in submission verifies identity, loads dashboard and re-enables
  assert.equal(c.get('account-dashboard').hidden,false);assert.equal(c.get('account-login').hidden,true);assert.equal(c.get('account-password').value,'');assert.equal(c.get('account-login').querySelector('[type="submit"]').disabled,false);assert.equal(c.get('account-intro').hidden,true);
 });
 
+test('owner app home and reporting do not equate referral profiles with members or invent revenue',async()=>{
+ const c=setup();c.harness.renderDashboard(view('owner'));await tick();
+ assert.match(c.get('account-dashboard').textContent,/Total members Not connected/);
+ assert.doesNotMatch(c.get('account-dashboard').textContent,/All partners|Registered referral profiles/);
+ assert.equal(c.requests.length,0);
+ for(const section of ['members','revenue','usage']){c.harness.selectSection(section);await tick();assert.match(c.get('account-dashboard').textContent,/not connected/);}
+ assert.equal(c.requests.length,0);
+ c.harness.selectSection('program');await tick();assert.match(c.requests.at(-1).url,/owner\/view$/);
+});
+test('member terms describe free Pro access without influencer commissions',async()=>{
+ const c=setup();const v=view();v.policy={scope:'global',version:1,terms:{rewardMonths:2,recurringBps:1500,tiers:[{through:null,firstMonthBps:3000}]}};
+ c.harness.renderDashboard(v);c.harness.selectSection('policy');await tick();
+ assert.match(c.get('account-dashboard').textContent,/2 free Pro months/);
+ assert.doesNotMatch(c.get('account-dashboard').textContent,/Influencer recurring commission|First-month commission/);
+});
+test('influencer home uses commissions and payouts rather than a member Pro reward card',async()=>{
+ const c=setup();c.harness.renderDashboard(view('influencer'));await tick();
+ assert.match(c.get('account-dashboard').textContent,/Recorded payouts/);
+ assert.doesNotMatch(c.get('account-dashboard').textContent,/Your Pro rewards|Available Pro months/);
+});
+
 }

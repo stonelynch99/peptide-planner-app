@@ -128,10 +128,15 @@ async function connect(){
  }catch(error){fail(error);}finally{if(epoch===generation)busy=false;}
 }
 function termsSummary(root,policy){
- heading(root,'Your referral terms',policy?scopeLabel(policy)+' · version '+policy.version+'. These terms are not active.':'Referral terms have not been set.');
+ const role=accountView?.account.role;
+ heading(root,role==='member'?'Your free Pro reward':role==='influencer'?'Your commission terms':'Referral program terms',policy?scopeLabel(policy)+' · version '+policy.version+'. These terms are not active.':'Referral terms have not been set.');
  if(!policy)return;
- const p=policy.terms;root.append(node('p','Member reward: '+display(p.rewardMonths)+' Pro months per qualifying signup. Recurring commission: '+(p.recurringBps===null?'Not set':p.recurringBps/100+'%')+'.'));
- table(root,p.tiers.map((t,i)=>({...t,number:i+1})),[['Tier',r=>r.number],['Through qualifying signup',r=>r.through===null?'No upper limit':r.through],['First-month commission',r=>r.firstMonthBps/100+'%']],'Influencer tiers have not been set.');
+ const p=policy.terms;
+ if(role!=='influencer')root.append(node('p','Member reward: '+display(p.rewardMonths)+' free Pro months per qualifying referral. Member rewards are Pro access, not cash commissions.'));
+ if(role!=='member'){
+ root.append(node('p','Influencer recurring commission: '+(p.recurringBps===null?'Not set':p.recurringBps/100+'%')+'.'));
+ table(root,p.tiers.map((t,i)=>({...t,number:i+1})),[['Tier',r=>r.number],['Through qualifying signup',r=>r.through===null?'No upper limit':r.through],['First-month commission',r=>r.firstMonthBps/100+'%']],'Influencer rates have not been set.');
+ }
 }
 async function history(root,section,offset=0){
  const epoch=generation,requestId=(historyLoads.get(root)||0)+1;historyLoads.set(root,requestId);try{
@@ -163,28 +168,45 @@ function renderDashboard(value){
  const shell=node('div',undefined,'account-shell'),sidebar=node('aside',undefined,'account-sidebar');
  const brand=node('a','EZPep Planner','account-brand');brand.href='https://ezpepplanner.com/';brand.target='_blank';brand.rel='noopener';sidebar.append(brand,node('p',role==='owner'?'Owner workspace':role==='influencer'?'Influencer workspace':'Member workspace','account-workspace'));
  const nav=node('nav');nav.setAttribute('aria-label','Account screens');
- const sections=role==='owner'?[['overview','Overview'],['membership','Membership'],['help','Help'],['partners','Partners'],['referrals','All referrals'],['entries','Rewards & commissions'],['payouts','Payout history'],['settings','Program settings'],['terms','Term versions'],['audit','Change history']]:[['overview','Overview'],['membership','Membership'],['help','Help'],['referrals','My referrals'],['entries',role==='member'?'My rewards':'My earnings'],...(role==='member'?[]:[['payouts','Payout history']]),['sharing','Share EZPep'],['policy','My terms']];
+ const sections=role==='owner'?[['overview','Overview'],['members','Members'],['revenue','Revenue'],['usage','App usage'],['program','Referral program'],['membership','My membership'],['help','Help'],['partners','Members & partners'],['referrals','All referrals'],['entries','Rewards & commissions'],['payouts','Payout history'],['settings','Program settings'],['terms','Term versions'],['audit','Change history']]:[['overview','Overview'],['membership','Membership'],['help','Help'],['referrals','My referrals'],['entries',role==='member'?'My rewards':'My earnings'],...(role==='member'?[]:[['payouts','Payout history']]),['sharing','Share EZPep'],['policy','My terms']];
  if(!sections.some(([key])=>key===accountSection))accountSection='overview';
  for(const [key,label] of sections){const b=button(label,()=>selectSection(key));b.className='account-nav-button';b.setAttribute('aria-current',key===accountSection?'page':'false');nav.append(b);}
  const app=link('Open app ↗','https://app.ezpepplanner.com/');app.target='_blank';app.rel='noopener';sidebar.append(nav,app);
  const main=node('div',undefined,'account-main'),top=node('div',undefined,'account-topbar');
  top.append(node('span','ACCOUNT / '+role.toUpperCase(),'account-eyebrow'),node('span','Program on hold','account-badge'),button('Refresh',()=>{if(draftDirty){notify('Save or cancel your draft before refreshing.');return;}void load();}),button('Sign out',()=>{if(draftDirty){notify('Save or cancel your unfinished owner draft before signing out.');return;}reset('Signed out of this website page. Your planner sign-in and saved data are unchanged.');}));
  main.append(top);shell.append(sidebar,main);root.append(shell);
- heading(main,accountSection==='overview'?(role==='owner'?'Your program, at a glance.':role==='influencer'?'Your partnership, at a glance.':'Your referrals and rewards.'):(sections.find(([key])=>key===accountSection)?.[1]||'Account'),'Verified account records. Public signup, billing, referral activation and payouts remain paused.');
+ heading(main,accountSection==='overview'?(role==='owner'?'Your app, at a glance.':role==='influencer'?'Your partnership, at a glance.':'Your referrals and rewards.'):(sections.find(([key])=>key===accountSection)?.[1]||'Account'),'Verified account records. Public signup, billing, referral activation and payouts remain paused.');
  const owner=byId('account-owner'),editorRoot=byId('account-editor');main.append(owner,editorRoot);
  if(accountSection==='membership'){renderMembership(main);return;}
  if(accountSection==='help'){renderHelp(main);return;}
  if(role==='owner'){
+  if(['overview','members','revenue','usage'].includes(accountSection)){
+   const descriptions={members:['All memberships','A complete membership directory is not connected yet. Referral profiles are not the full member roster. Free, paid Pro and reward Pro access will be reported separately.'],revenue:['Revenue & subscriptions','Verified Stripe reporting is not connected to this dashboard yet. No revenue or subscription figures are estimated here.'],usage:['App usage','Website usage reporting is not connected yet. Existing aggregate beta analytics remain available inside the app under More → Beta Dashboard.']};
+   if(accountSection==='overview'){
+    const panel=card(main,'Memberships','The whole-app overview is being connected. These figures are unavailable, not zero.');
+    const metrics=node('div',undefined,'account-metrics');for(const label of ['Total members','Signups · last 7 days','Monthly recurring revenue'])metric(metrics,label,'Not connected');panel.append(metrics);
+    for(const [key,title,copy] of [['members','Members','Free, paid Pro and reward Pro memberships'],['revenue','Revenue','Payments, refunds, fees and bank payouts'],['usage','App usage','Overall activity and feature usage'],['program','Referral program','Member Pro rewards and influencer commissions']]){const area=card(main,title,copy);area.append(button('View '+title.toLowerCase(),()=>selectSection(key)));}
+   }else{const [title,copy]=descriptions[accountSection];card(main,title,copy);}
+   return;
+  }
   if(accountSection==='settings'){void loadOwner('partners',0,'',true);}
-  else void loadOwner(accountSection==='overview'?'partners':accountSection,0,'',false,accountSection==='overview');
+  else void loadOwner(accountSection==='program'?'partners':accountSection,0,'',false,accountSection==='program');
   return;
  }
  if(accountSection==='overview'){
-  counts(main,v.totals,role==='influencer');
+  const summary=node('div',undefined,'account-metrics');
+  if(role==='member'){metric(summary,'Qualified referrals',number(v.totals.qualified));metric(summary,'Earned Pro months',number(v.totals.earnedMonths));metric(summary,'Available Pro months',number(v.totals.availableMonths));}
+  else{metric(summary,'Qualified referrals',number(v.totals.qualified));metric(summary,'Earned commissions',money(number(v.totals.earnedCents)));metric(summary,'Commissions owed',money(number(v.totals.owedCents)));}
+  main.append(summary);
   const two=node('div',undefined,'account-two');main.append(two);renderShare(two,v);
-  const rewards=card(two,'Your Pro rewards','Earned, pending and used months remain distinct.');
-  metric(rewards,'Available Pro months',number(v.totals.availableMonths));
+  const rewards=card(two,role==='member'?'Your Pro rewards':'Recorded payouts',role==='member'?'Free Pro months earned by referring friends.':'Commission payouts stay separate from member Pro rewards.');
+  if(role==='member')metric(rewards,'Available Pro months',number(v.totals.availableMonths));else metric(rewards,'Paid commissions',money(number(v.totals.paidCents)));
   if(v.account.pendingRole)rewards.append(node('p','Influencer promotion is a draft. Your member access is preserved.','account-hold'));
+  const details=card(main,role==='member'?'Reward details':'Commission details');
+  const disclosure=node('details'),disclosureTitle=node('summary',role==='member'?'Pending and used Pro months':'Pending, earned, paid and owed');disclosure.append(disclosureTitle);
+  if(role==='member')disclosure.append(node('p',number(v.totals.pendingMonths)+' pending Pro months · '+number(v.totals.redeemedMonths)+' used. Rewards are free Pro access; they are not cash commissions.'));
+  else{counts(disclosure,v.totals,true);disclosure.append(node('p','Pending awaits qualification. Earned is after recorded refunds; paid is a recorded payout. Owed is the outstanding commission balance.'));}
+  details.append(disclosure);
   if(role==='influencer')renderTier(main,v);
   const recent=card(main,'Recent referrals');void history(recent,'referrals');
  }else if(accountSection==='sharing')renderShare(main,v);
@@ -223,8 +245,8 @@ async function loadOwner(section=ownerSection,offset=ownerOffset,query=ownerQuer
   if(v.account.role!=='owner')throw Error('OWNER_REQUIRED');ownerRevision=v.revision;ownerSection=section;ownerOffset=offset;ownerQuery=query;
   const root=byId('account-owner');root.replaceChildren();root.hidden=false;root.className='account-panel';
   if(settingsOnly){heading(root,'Program settings','Save versioned drafts with a reason. Historical rewards, commissions and access are preserved.');termsSummary(root,v.policy);root.append(button('Edit global draft terms',()=>editTerms(null,v.policy)));return;}
-  if(overview)heading(root,'Program overview','All partners and recorded activity. No money movement is available.');
-  const metrics=node('div',undefined,'account-metrics');metric(metrics,'All partners',v.partnerCount);root.append(metrics);counts(root,v.totals,true);
+  if(overview)heading(root,'Referral program','Ordinary members earn free Pro months; influencers earn commissions under their individual terms. Activation remains paused.');
+  const metrics=node('div',undefined,'account-metrics');metric(metrics,'Registered referral profiles',v.partnerCount);root.append(metrics);counts(root,v.totals,true);
   const search=node('form',undefined,'account-search'),label=node('label',section==='partners'?'Find a referral code':'Find a partner ID prefix'),input=node('input');input.value=query;input.maxLength=80;input.pattern='[a-zA-Z0-9_-]*';label.append(input);search.append(label);const submit=node('button','Find','button secondary');submit.type='submit';search.append(submit);search.addEventListener('submit',e=>{e.preventDefault();void loadOwner(section,0,input.value.trim());});root.append(search);
   root.append(button('Edit global draft terms',()=>editTerms(null,v.policy)));
   const identity=r=>r.user_id||r.partner_id||'Global';
