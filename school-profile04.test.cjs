@@ -84,3 +84,105 @@ test('remaining MT-I, 5-Amino-1MQ, NAD+ and MOTS-c references preserve route and
  const nad=section('nad-plus','mots-c');assert.match(nad,/amount:750,unit:'mg'/);assert.match(nad,/6 hours at approximately 2 mg\/min/);assert.match(nad,/transferable:false/);
  const mots=section('mots-c',null);assert.match(mots,/5 mg\/kg/);assert.match(mots,/human portion measured endogenous MOTS-c/);assert.match(mots,/transferable:false/);
 });
+
+// Introductory course progress: synthetic storage only; no planner/auth/network changes.
+{
+ const vm=require('node:vm'),{stripTypeScriptTypes}=require('node:module');
+ const source=fs.readFileSync('./app/src/QuickStart.tsx','utf8');
+ const model=source.slice(source.indexOf('export const COURSE_PATHS='),source.indexOf("import {Text")).replace(/^export /gm,'');
+ const context=vm.createContext({});
+ vm.runInContext(stripTypeScriptTypes(model,{mode:'transform'})+';globalThis.api={COURSE_PATHS,courseProgressScope,parseCourseProgress,createCourseProgressSession};',context);
+ const {COURSE_PATHS,courseProgressScope,parseCourseProgress,createCourseProgressSession}=context.api;
+ const first='11111111-1111-4111-8111-111111111111',second='22222222-2222-4222-8222-222222222222';
+ const plain=value=>JSON.parse(JSON.stringify(value));
+ const fixture=()=>{const values=new Map([['planner:sentinel','untouched']]),writes=[],reads=[];let failSave=false,failRead=false;
+  return {values,writes,reads,setSaveFailure:v=>failSave=v,setReadFailure:v=>failRead=v,
+   port:{getItem:async key=>{reads.push(key);if(failRead)throw Error('unavailable');return values.get(key)??null;},
+    setItem:async(key,value)=>{if(failSave)throw Error('quota');writes.push(key);values.set(key,value);}}};
+ };
+ test('courses: missing progress loads empty without writing or touching planner data',async()=>{
+  const f=fixture(),s=createCourseProgressSession(f.port,first),p=await s.load();
+  assert.equal(p.scope,first);assert.deepEqual(plain(p.completed),{foundations:[],planning:[],research:[]});
+  assert.equal(f.writes.length,0);assert.deepEqual(f.reads,['ezpep:learning:intro-v1:'+first]);assert.equal(f.values.get('planner:sentinel'),'untouched');
+ });
+ test('courses: completing and restarting retains each lesson once with real completion count',async()=>{
+  const f=fixture(),s=createCourseProgressSession(f.port,first);await s.load();
+  await s.complete('foundations',0);await s.complete('foundations',0);await s.complete('planning',2);
+  assert.equal(f.writes.length,2);const p=await createCourseProgressSession(f.port,first).load();
+  assert.deepEqual(plain(p.completed.foundations),[0]);assert.deepEqual(plain(p.completed.planning),[2]);assert.equal(f.values.get('planner:sentinel'),'untouched');
+ });
+ test('courses: concurrent completion saves serialize without losing either lesson',async()=>{
+  const f=fixture(),s=createCourseProgressSession(f.port,first);await s.load();
+  await Promise.all([s.complete('foundations',1),s.complete('foundations',0),s.complete('foundations',1)]);
+  assert.deepEqual(plain(s.snapshot().completed.foundations),[0,1]);assert.equal(f.writes.length,2);
+  assert.deepEqual(plain((await createCourseProgressSession(f.port,first).load()).completed.foundations),[0,1]);
+ });
+ test('courses: failed durable save keeps prior completion and supports exact retry',async()=>{
+  const f=fixture(),s=createCourseProgressSession(f.port,first);await s.load();await s.complete('foundations',0);
+  const before=f.values.get(f.writes[0]);f.setSaveFailure(true);await assert.rejects(s.complete('foundations',1),/quota/);
+  assert.equal(f.values.get(f.writes[0]),before);assert.deepEqual(plain(s.snapshot().completed.foundations),[0]);
+  f.setSaveFailure(false);await s.complete('foundations',1);assert.deepEqual(plain(s.snapshot().completed.foundations),[0,1]);
+ });
+ test('courses: failed reads and malformed records cannot be overwritten as an empty course',async()=>{
+  const f=fixture(),s=createCourseProgressSession(f.port,first),key='ezpep:learning:intro-v1:'+first;
+  f.values.set(key,'{broken');await assert.rejects(s.load(),/saved record has been kept/);await assert.rejects(s.complete('foundations',0),/Load learning progress/);
+  assert.equal(f.values.get(key),'{broken');assert.equal(f.writes.length,0);
+  const other=createCourseProgressSession(f.port,second);f.setReadFailure(true);await assert.rejects(other.load(),/unavailable/);assert.equal(f.writes.length,0);
+ });
+ test('courses: accounts and signed-out device progress are isolated',async()=>{
+  const f=fixture(),a=createCourseProgressSession(f.port,first),b=createCourseProgressSession(f.port,second),device=createCourseProgressSession(f.port,null);
+  await a.load();await a.complete('research',3);
+  assert.deepEqual(plain((await b.load()).completed.research),[]);assert.deepEqual(plain((await device.load()).completed.research),[]);
+  await b.complete('planning',1);assert.deepEqual(plain((await a.load()).completed.research),[3]);assert.deepEqual(plain(a.snapshot().completed.planning),[]);
+  assert.throws(()=>courseProgressScope('../planner'),/Invalid learning account/);
+ });
+ test('courses: invalid owner, schema, course or lesson preserves all stored progress',async()=>{
+  const f=fixture(),s=createCourseProgressSession(f.port,first);await s.load();const p=s.snapshot();
+  for(const [id,n] of [['unknown',0],['planning',5],['planning',-1],['planning',0.5]])await assert.rejects(s.complete(id,n),/Unknown introductory lesson/);
+  assert.equal(f.writes.length,0);
+  for(const changed of [{...p,scope:second},{...p,schema:2},{...p,contentVersion:'future'},{...p,extra:true},{...p,completed:{...p.completed,planning:[0,0]}},{...p,completed:{...p.completed,planning:[5]}}])assert.throws(()=>parseCourseProgress(JSON.stringify(changed),first),/saved record has been kept/);
+ });
+ test('courses: returned snapshots cannot mutate later durable progress',async()=>{
+  const f=fixture(),s=createCourseProgressSession(f.port,first),p=await s.load();p.completed.planning.push(4);
+  await s.complete('planning',0);const snapshot=s.snapshot();snapshot.completed.planning.push(3);
+  assert.deepEqual(plain(s.snapshot().completed.planning),[0]);assert.deepEqual(plain((await createCourseProgressSession(f.port,first).load()).completed.planning),[0]);
+ });
+ test('courses: all fifteen completions survive restart without changing other storage',async()=>{
+  const f=fixture(),s=createCourseProgressSession(f.port,first);await s.load();
+  for(const p of COURSE_PATHS)for(let i=0;i<p.lessons.length;i++)await s.complete(p.id,i);
+  const restored=await createCourseProgressSession(f.port,first).load();
+  assert.equal(Object.values(restored.completed).reduce((n,x)=>n+x.length,0),15);
+  assert.equal(f.writes.length,15);assert.equal(f.values.get('planner:sentinel'),'untouched');
+ });
+}
+
+{
+ const vm=require('node:vm'),{stripTypeScriptTypes}=require('node:module');
+ const source=fs.readFileSync('./app/src/QuickStart.tsx','utf8');
+ const action=source.slice(source.indexOf(' async function finishLesson('),source.indexOf(' const bodies:')).trim();
+ function actionFixture(){
+  let resolve,reject;const wait=new Promise((yes,no)=>{resolve=yes;reject=no;});
+  const active={complete:()=>wait},progress=[],lessons=[],messages=[],busy=[],writes=[];
+  const context=vm.createContext({onProgressWrite:delta=>writes.push(delta),session:{current:active},reading:{current:{open:'foundations',lesson:0}},ready:true,busy:false,
+   paths:[{id:'foundations',lessons:['one','two','three','four','five']}],
+   setProgress:p=>progress.push(p),setLesson:i=>lessons.push(i),setMessage:m=>messages.push(m),setBusy:b=>busy.push(b)});
+  vm.runInContext(stripTypeScriptTypes(action,{mode:'transform'})+';globalThis.finish=finishLesson;',context);
+  return {context,resolve,reject,progress,lessons,messages,busy,writes};
+ }
+ test('courses UI: saved completion advances the lesson currently being read',async()=>{
+  const f=actionFixture(),job=f.context.finish('foundations',0);f.resolve({saved:true});await job;
+  assert.deepEqual(f.progress,[{saved:true}]);assert.deepEqual(f.lessons,[1]);assert.deepEqual(f.busy,[true,false]);
+ });
+ test('courses UI: changing account while saving cannot reveal old progress or change new screen',async()=>{
+  const f=actionFixture(),job=f.context.finish('foundations',0);f.context.session.current={};f.resolve({private:'old account'});await job;
+  assert.equal(f.progress.length,0);assert.equal(f.lessons.length,0);assert.deepEqual(f.messages,['']);assert.deepEqual(f.busy,[true]);assert.deepEqual(f.writes,[1,-1]);
+ });
+ test('courses UI: changing courses while saving cannot jump the newly selected lesson',async()=>{
+  const f=actionFixture(),job=f.context.finish('foundations',0);f.context.reading.current={open:'research',lesson:3};f.resolve({saved:true});await job;
+  assert.equal(f.progress.length,1);assert.equal(f.lessons.length,0);
+ });
+ test('courses UI: failed completion preserves the current reading and reports a safe retry message',async()=>{
+  const f=actionFixture(),job=f.context.finish('foundations',0);f.reject(Error('secret raw quota diagnostic'));await job;
+  assert.equal(f.progress.length,0);assert.equal(f.lessons.length,0);assert.match(f.messages.at(-1),/previous progress is preserved/);assert.doesNotMatch(f.messages.at(-1),/secret/);assert.deepEqual(f.busy,[true,false]);assert.deepEqual(f.writes,[1,-1]);
+ });
+}
