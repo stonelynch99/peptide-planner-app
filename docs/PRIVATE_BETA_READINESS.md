@@ -1,3 +1,17 @@
+# Learning-flow milestone — October 4, 2026
+Owner: Stone Lynch. This checkpoint supersedes older course-flow claims below.
+
+## Implemented in isolated source; validation pending at preparation
+- [x] Overall introductory course progress with a single start/resume action choosing the first unfinished lesson.
+- [x] Completed courses offer an explicit next unfinished path; all 15 completed leaves courses available for review.
+- [x] Course completion labels reflect actual remaining lessons, including out-of-order reading.
+- [x] Summary and completion actions require loaded progress matching the current account. Reading remains available when progress cannot load.
+- [x] Existing lesson bodies, account-scoped storage and durable-save/update protections are unchanged.
+- [ ] Hosted TypeScript/export/smoke and complete regression results must be recorded in protected REVIEW/HANDOFF before calling this tested.
+- [ ] Publication remains held pending missing-receipt reconciliation and source-only workflow safety repair. No push or deployment retry.
+- [ ] Full Pro course content and cross-device course progress remain separate unfinished launch work.
+All signup, billing, referral activation, partner promotion and payout holds remain. No new business-policy decisions or customer-data changes.
+
 # Latest launch milestone — October 4, 2026, Vancouver
 Owner: Stone Lynch. Cloud-first development continues without the laptop.
 

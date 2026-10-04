@@ -186,3 +186,60 @@ test('remaining MT-I, 5-Amino-1MQ, NAD+ and MOTS-c references preserve route and
   assert.equal(f.progress.length,0);assert.equal(f.lessons.length,0);assert.match(f.messages.at(-1),/previous progress is preserved/);assert.doesNotMatch(f.messages.at(-1),/secret/);assert.deepEqual(f.busy,[true,false]);assert.deepEqual(f.writes,[1,-1]);
  });
 }
+
+{
+ const vm=require('node:vm'),ts=require('./app/node_modules/typescript');
+ const source=fs.readFileSync('./app/src/QuickStart.tsx','utf8');
+ const code=ts.transpileModule(source,{compilerOptions:{jsx:ts.JsxEmit.React,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const owner='11111111-1111-4111-8111-111111111111';
+ function courseView({completed={foundations:[],planning:[],research:[]},scope=owner,ready=true,open=null,lesson=null}={}){
+  const values=[open,lesson,{schema:1,contentVersion:'intro-v1',scope,completed},ready,false,''],updates=[],writes=[];let index=0;
+  const React={createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)}),
+   useState:()=>{const i=index++;return [values[i],v=>updates.push([i,v])];},useRef:v=>({current:v}),useEffect:()=>{}};
+  const context=vm.createContext({exports:{},require:name=>{
+   if(name==='react')return {...React,default:React};
+   if(name==='react-native')return {Text:'Text',Pressable:'Pressable',View:'View',TextInput:'TextInput',StyleSheet:{create:v=>v,hairlineWidth:1}};
+   if(name==='./store')return {plannerStorage:{getItem:async()=>null,setItem:async()=>{throw Error('Unexpected write');}}};
+   if(name==='./ui')return {Card:'Card',u:{}};
+   if(name==='./school-basics')return {reconstitutionBasics:{}};
+   throw Error(name);
+  }});
+  vm.runInContext(code,context);
+  const root=context.exports.LearningPaths({progressOwner:owner,onProgressWrite:delta=>writes.push(delta)}),nodes=[];
+  function visit(n){if(!n||typeof n!=='object')return;nodes.push(n);n.children?.forEach(visit);}visit(root);
+  const text=n=>typeof n==='string'||typeof n==='number'?String(n):n?.children?.map(text).join('')||'';
+  return {nodes,updates,writes,text,allText:text(root),button:label=>nodes.find(n=>n.type==='Pressable'&&n.props.accessibilityLabel===label)};
+ }
+ test('learning flow: overall resume opens first unfinished lesson without changing stored progress',()=>{
+  const f=courseView({completed:{foundations:[0,2],planning:[],research:[]}});
+  const bar=f.nodes.find(n=>n.props.accessibilityLabel==='Overall introductory learning completion');
+  assert.deepEqual(JSON.parse(JSON.stringify(bar.props.accessibilityValue)),{min:0,max:15,now:2});
+  f.button('Continue learning: Understanding evidence levels').props.onPress();
+  assert.deepEqual(f.updates,[[0,'foundations'],[1,1]]);assert.deepEqual(f.writes,[]);
+ });
+ test('learning flow: completed course offers next unfinished path and review remains available',()=>{
+  const f=courseView({completed:{foundations:[0,1,2,3,4],planning:[0],research:[]},open:'foundations',lesson:4});
+  f.button('Continue to Planning Fundamentals').props.onPress();
+  assert.deepEqual(f.updates,[[0,'planning'],[1,1]]);assert.ok(f.button('Review EZPep Foundations'));assert.deepEqual(f.writes,[]);
+ });
+ test('learning flow: all fifteen complete has no false next lesson',()=>{
+  const f=courseView({completed:{foundations:[0,1,2,3,4],planning:[0,1,2,3,4],research:[0,1,2,3,4]},open:'research',lesson:4});
+  assert.match(f.allText,/All introductory lessons completed/);
+  assert.equal(f.nodes.filter(n=>/^Continue learning:|^Continue to /.test(n.props.accessibilityLabel||'')).length,0);
+ });
+ test('learning flow: last lesson cannot falsely complete an unfinished course',()=>{
+  const incomplete=courseView({open:'foundations',lesson:4});
+  assert.match(incomplete.allText,/Complete lesson/);assert.doesNotMatch(incomplete.allText,/Complete course/);
+  const lastMissing=courseView({completed:{foundations:[0,2,3,4],planning:[],research:[]},open:'foundations',lesson:1});
+  assert.match(lastMissing.allText,/Complete course/);
+ });
+ test('learning flow: unloaded or another account progress hides resume and completion but keeps readings',()=>{
+  for(const params of [{ready:false},{scope:'22222222-2222-4222-8222-222222222222'}]){
+   const f=courseView({...params,open:'foundations',lesson:0});
+   assert.equal(f.nodes.some(n=>n.props.accessibilityLabel==='Overall introductory learning completion'),false);
+   assert.equal(f.nodes.some(n=>/^Continue learning:|^Start learning:/.test(n.props.accessibilityLabel||'')),false);
+   assert.match(f.allText,/Peptides are chains of amino acids/);
+   assert.doesNotMatch(f.allText,/Complete & next lesson|Complete course/);
+  }
+ });
+}
