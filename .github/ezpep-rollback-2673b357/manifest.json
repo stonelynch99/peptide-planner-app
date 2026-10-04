@@ -1,0 +1,94 @@
+{
+  "at": "2026-10-04T00:18:17.872Z",
+  "commit": "2673b357efa3ab26f0c30630edaa7a5f0b9bcf9a",
+  "source": "exact live HTTP bytes; independent preserved baseline export inventory and hashes",
+  "files": [
+    {
+      "path": "_expo/static/js/web/index-v04-7adf834ffb7749ec601fc729f2c61aeb.js",
+      "bytes": 1502777,
+      "sha256": "2d8821395c638649f168edb58a7e9185371960bc5020cd0c1a3d7a5bb0d77f47"
+    },
+    {
+      "path": "apple-touch-icon.png",
+      "bytes": 31731,
+      "sha256": "d19f20e9c639a18830756dc7041fcf1f95156c4786c86f20b566c9fb8e5dc062"
+    },
+    {
+      "path": "assets/assets/professor-lynch-avatar.0c9a27e1bd25cb253b4fa99ac31be6b9.webp",
+      "bytes": 8304,
+      "sha256": "07a66d603d92809f9de7b5ad326a76ac547c1b92010173b5e299e267484955dc"
+    },
+    {
+      "path": "assets/assets/professor-lynch-checklist.7b37bd60ae7ce70551cf9009373e9a8a.webp",
+      "bytes": 36284,
+      "sha256": "aab85f8d30cdeeaca126f120caa86982d15fa4147926073169702669ad04312f"
+    },
+    {
+      "path": "assets/assets/professor-lynch-pointing-right.321d43b77f6305a28f08ef9306878dde.webp",
+      "bytes": 28786,
+      "sha256": "d360de6a30ca7093e14acf2e3ba3fa0aaf0e698a06f64f383bed29a4d0d76e54"
+    },
+    {
+      "path": "assets/assets/professor-lynch-thinking.ea1dcf6619b7d552b5d42d19e920189d.webp",
+      "bytes": 28100,
+      "sha256": "d1a1557793d0b2bf4a854450dc0e191fd8aebf4ecd6c5950fa6989984c8f46b8"
+    },
+    {
+      "path": "favicon.ico",
+      "bytes": 14510,
+      "sha256": "fd4b0071237948ddbd91ede97b3fe4c6ebb2f26deea0a47bce0f44af7a8ff43b"
+    },
+    {
+      "path": "favicon.png",
+      "bytes": 1479,
+      "sha256": "76633a51ac1fba751d815171aedc1fe677fbc12c758a7e15076518981ed5ac86"
+    },
+    {
+      "path": "icon-192.png",
+      "bytes": 35635,
+      "sha256": "1661a3d3c0cde210cde963c316a2c9efd139b930d1a71b0933a27fcf89636c51"
+    },
+    {
+      "path": "icon-512.png",
+      "bytes": 216703,
+      "sha256": "78a85dd6488a6977c033ef24b26226e9701508d2fadfba0fd71be5be904e4b96"
+    },
+    {
+      "path": "index.html",
+      "bytes": 1282,
+      "sha256": "69e75d01c03b752c42325ae7cfb589b3f0ad1f5a38355482677d140137ca68db"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 465,
+      "sha256": "ae68272e474a7fb1dd1d532cd5b6df82edfbbef13eb3e6c842aa075320a366c7"
+    },
+    {
+      "path": "metadata.json",
+      "bytes": 49,
+      "sha256": "aa5f19cc84d41c0f8c70ececb2bc82e863227ea1e121632aca879eb616056991"
+    },
+    {
+      "path": "release.json",
+      "bytes": 78,
+      "sha256": "a11683381baa305ca3d240500fc816149365cda0698b360a8c6d179271fbf498"
+    },
+    {
+      "path": "reminder-sw.js",
+      "bytes": 2751,
+      "sha256": "30b600e2bffc3624c631e5e9667adc5ee855abbee89c189551b7dffab28b876b"
+    },
+    {
+      "path": "website-preview/index.html",
+      "bytes": 18772,
+      "sha256": "bffefd5788fefdf5f3c24dbaaedadf403d21e5ccd8fe8bd6faadfe065345e9d9"
+    },
+    {
+      "path": "website-preview/style.css",
+      "bytes": 17058,
+      "sha256": "aa22bfa8bd258e44d71e86e7f6111bfbeeaa4d875ccb5287c8b5f87c9da18ab0"
+    }
+  ],
+  "productionChanged": false,
+  "providerArtifactRestored": false
+}
