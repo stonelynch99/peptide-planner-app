@@ -1,6 +1,6 @@
 
 
-import {Store as ProposalStore,ReferralAccounts as ProposalAccounts,ReferralProposalJournal} from './membership-foundation/backend/store.mjs';
+import {Store as ProposalStore,ReferralAccounts as ProposalAccounts,ReferralProposalJournal,referralCommission} from './membership-foundation/backend/store.mjs';
 import {mkdtempSync as proposalTemp,rmSync as proposalRemove} from 'node:fs';
 import {tmpdir as proposalTmpdir} from 'node:os';
 import {join as proposalJoin} from 'node:path';
@@ -376,4 +376,45 @@ test('initial launch draft retains existing custom global and individual terms',
  assert.throws(()=>a.initializeLaunchDraft('not-an-owner'),/OWNER_REQUIRED/);
 });
 
+}
+
+
+{
+ const launchOwner='00000000-0000-4000-8000-000000000001',member='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',referred='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',day=86400000,start=Date.parse('2026-10-01T00:00:00Z');
+ function launchFixture(){
+  const s=new ProposalStore(),a=new ProposalAccounts(s);a.initializeLaunchDraft(launchOwner);const p=a.ensure(member),j=new ReferralProposalJournal(s);
+  const e={partnerId:member,referredUser:referred,referralCode:p.code,expectedCode:p.code,clickedAt:start,signedUpAt:start+day,confirmedAt:start+day,evaluatedAt:start+10*day,invoice:null};
+  return {s,a,j,e};
+ }
+ test('launch acceptance: approved figures alone cannot capture or award an incomplete referral',()=>{
+  const {s,a,j,e}=launchFixture();try{
+   const p=a.terms(null),ready=referralQualificationReadiness(p);assert.equal(ready.ready,false);assert.deepEqual(ready.missing,['effectiveAt','attributionDays','holdingDays']);
+   const before=JSON.stringify(a.totals());assert.throws(()=>j.capture(e),/CAPTURE_REJECTED:terms_incomplete/);
+   const r=j.record('proposal_launch_incomplete',e);assert.equal(r.reason,'terms_incomplete');assert.equal(r.proposalRecorded,false);assert.equal(r.creditsApplied,false);assert.equal(r.activationAllowed,false);
+   assert.equal(JSON.stringify(a.totals()),before);assert.equal(s.get('SELECT count(*) n FROM account_referral_captures').n,0);assert.equal(s.get('SELECT count(*) n FROM subscriptions').n,0);
+  }finally{s.db.close();}
+ });
+ test('launch acceptance: two-month captured proposal survives owner edits and duplicate paid events without credits',()=>{
+  const {s,a,j,e}=launchFixture();try{
+   // Dates and qualification windows below are isolated fixture choices, not owner launch decisions.
+   const complete={...a.terms(null).terms,effectiveAt:start,attributionDays:30,holdingDays:7};
+   a.draft(launchOwner,{action:'terms',target:null,terms:complete,expectedRevision:a.revision(),reason:'Synthetic acceptance fixture only'});
+   const captured=j.capture(e);assert.equal(captured.creditsApplied,false);
+   a.draft(launchOwner,{action:'terms',target:null,terms:{...complete,rewardMonths:3},expectedRevision:a.revision(),reason:'Synthetic future reward edit'});
+   const paid={...e,invoice:{id:'in_launchAcceptance',accountId:referred,currency:'cad',status:'paid',month:1,paidAt:start+2*day,paidCents:839,taxCents:40,refundedCents:0}};
+   const first=j.record('proposal_launch_first',paid);assert.equal(first.proposedRewardMonths,2);assert.equal(first.termVersion,captured.termVersion);assert.equal(first.activationAllowed,false);assert.equal(first.creditsApplied,false);
+   assert.equal(j.record('proposal_launch_first',paid).replayed,true);assert.equal(j.record('proposal_launch_redelivery',paid).duplicateProposal,true);
+   assert.equal(s.get('SELECT count(*) n FROM account_referral_proposals').n,1);assert.equal(s.get('SELECT count(*) n FROM account_referral_entries').n,0);assert.equal(s.get('SELECT count(*) n FROM subscriptions').n,0);
+   const next={...e,referredUser:'cccccccc-cccc-4ccc-8ccc-cccccccccccc'};const later=j.capture(next);const result=j.record('proposal_launch_later',{...next,invoice:{...paid.invoice,id:'in_launchLater',accountId:next.referredUser}});
+   assert.equal(result.proposedRewardMonths,3);assert.equal(result.termVersion,later.termVersion);assert.notEqual(later.termVersion,captured.termVersion);assert.equal(result.creditsApplied,false);
+  }finally{s.db.close();}
+ });
+ test('launch acceptance: influencer starting rates apply from the first referral without invented quotas or earning writes',()=>{
+  const {s,a}=launchFixture();try{
+   const p=a.terms(null),netCents=799,before=JSON.stringify(a.totals());
+   for(const signup of [1,2,10,1000,1000000]){assert.equal(referralCommission(netCents,signup,true,p.terms),639);assert.equal(referralCommission(netCents,signup,false,p.terms),119);}
+   assert.equal(referralCommission(0,1,true,p.terms),0);assert.equal(referralCommission(0,1,false,p.terms),0);
+   assert.equal(JSON.stringify(a.totals()),before);assert.equal(s.get('SELECT count(*) n FROM account_referral_entries').n,0);assert.equal(s.get('SELECT count(*) n FROM account_referral_payouts').n,0);assert.equal(s.settings().billing_enabled,false);
+  }finally{s.db.close();}
+ });
 }

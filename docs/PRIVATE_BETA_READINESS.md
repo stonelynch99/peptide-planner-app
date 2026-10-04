@@ -1,3 +1,30 @@
+# Latest launch milestone — October 4, 2026, Vancouver
+Owner: Stone Lynch. Cloud-first development continues without the laptop.
+
+## Implemented and tested; not yet published
+- [x] Dedicated app Referrals & rewards screen. More → Referrals & rewards and More → Settings → Referrals & rewards. Verified-account panel retains public sharing and website account access; signed-out/loading/error/denied states do not render referral records. More remains the selected bottom tab.
+- [x] More no longer embeds the referral dashboard below its menu. Account/cloud, backup/data, update, Quick Start, feedback and verified-owner navigation remain.
+- [x] Six actual-source navigation/role checks plus full regression suite 376/376 on source a5548f0a73abff3016c9825ee43620103f4cfeb3. TypeScript, Expo export and 17-file mobile412/desktop1366 hosted smoke checks passed. Smoke checks are not an authenticated click-through or physical-phone acceptance.
+- [x] Local isolated launch acceptance: stored two-month defaults fail closed while effective date/attribution/hold decisions are unset; captured two-month proposal survives future owner changes and duplicate paid events; influencer 80% first month / 15% recurring applies from referral one with no invented quotas. Three checks pass against actual backend source.
+- [ ] Actual referral credit/Pro entitlement activation and real influencer earning remain unimplemented/unverified for launch. A held proposal is NOT a reward granted.
+- [ ] Publish reviewed account clarity, course copy and new app navigation only after deployment receipt and source-only workflow safety repair. No source push or deployment retry performed.
+
+## Membership integration blocker verified by Cloud
+Central policy v3 SHA69b7b48aed8d74807353ce25c314608b739a389a18811083dc5299c5471d55cf has Free one plan/introductory learning; Pro multiple/full learning; CAD799 regular and disabled CAD499 offer. Installed membership policy remains d0f7798b1d044443e886a47ff788fc7572a5c19f515758bcabed6061e7602e45, manifest1ce6fb5d791cb6d3bcac0300321b0649f9e0ca5c6e45e97fd0cc6a1591f752e8.
+Cloud invoked validate_membership_backend_release with current HEAD, preserved pending diff and current policy; rejected POLICY_SHA_CONFLICT before any deployment. Existing candidate is tied to the old policy. Do not weaken or bypass the policy guard. App entitlement enforcement is still false; synthetic checks do not establish production authorization.
+
+## Next bounded infrastructure repair later today
+1. Identify the existing GitHub deployment run and bind its verified commit/artifact/17 live files to the missing receipt without replay.
+2. Prove and repair source-only workflow coordination so pushing reviewed source cannot unexpectedly deploy.
+3. Prepare a reviewed membership runtime matching current policy v3, with validation/deployment/rollback hash guards and unchanged beta admission, customer data and launch holds. This is policy reconciliation, not approval to activate signup or billing.
+4. If dedicated TEST prices are still absent, add a narrowly scoped exact CAD799/CAD499 TEST-price creation/verification path; preserve historical CAD899 records and AURAPEP settings. Never use LIVE credentials or activate checkout.
+
+All customer data, beta access and pending three-file diff d77baef87fee915c2a433727434901a82c589c96c4867bbd054bc3f76b37d3e8 remain protected. Public signup, live billing, referrals, promotions and payouts remain disabled. No laptop action requested now.
+
+This milestone supersedes earlier status below; prior evidence and checklist remain intact.
+
+---
+
 # Current launch checkpoint — October 4, 2026, 13:00 Vancouver
 Owner: Stone Lynch. Cloud-first development; local work is infrastructure repair only.
 
