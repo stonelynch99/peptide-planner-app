@@ -91,6 +91,52 @@ export function referralCommission(netCents,signupOrdinal,firstMonth,terms){
  if(rate===null||rate===undefined)throw Error('COMMISSION_TERMS_PENDING');
  return Math.floor(netCents*rate/10000);
 }
+
+export function referralQualificationReadiness(policy){
+ if(!policy)return {ready:false,missing:['terms'],mode:'preparation',activationAllowed:false};
+ const p=validateReferralTerms(policy.terms),missing=[];
+ if(!integer(policy.version,1,1000000000))missing.push('term_version');
+ if(!['first_paid_month','verified_signup'].includes(p.qualification))missing.push('qualification');
+ for(const key of ['rewardMonths','effectiveAt','attributionDays','holdingDays'])if(p[key]===null)missing.push(key);
+ return {ready:missing.length===0,missing,mode:'preparation',activationAllowed:false};
+}
+// A decision plan over normalized evidence, never verification of a provider event.
+// Only a future protected adapter may supply independently verified signup/billing facts.
+export function planReferralQualification(evidence,policy){
+ const fields=['partnerId','referredUser','referralCode','expectedCode','clickedAt','signedUpAt','confirmedAt','evaluatedAt','invoice'];
+ if(!exact(evidence,fields)||!UUID.test(evidence.partnerId)||!UUID.test(evidence.referredUser)||! /^[a-zA-Z0-9_]{1,80}$/.test(evidence.referralCode??'')||! /^[a-zA-Z0-9_]{1,80}$/.test(evidence.expectedCode??''))throw Error('INVALID_QUALIFICATION_EVIDENCE');
+ for(const key of ['clickedAt','signedUpAt','evaluatedAt'])if(!integer(evidence[key],1,8640000000000000))throw Error('INVALID_QUALIFICATION_EVIDENCE');
+ if(evidence.confirmedAt!==null&&!integer(evidence.confirmedAt,1,evidence.evaluatedAt))throw Error('INVALID_QUALIFICATION_EVIDENCE');
+ const base={mode:'preparation',activationAllowed:false,creditsApplied:false,termVersion:policy?.version??null};
+ const stopped=reason=>({...base,wouldQualify:false,reason,proposedRewardMonths:null,eligibleAt:null});
+ if(evidence.partnerId===evidence.referredUser)return stopped('self_referral');
+ if(evidence.referralCode!==evidence.expectedCode)return stopped('code_mismatch');
+ if(evidence.clickedAt>evidence.signedUpAt||evidence.signedUpAt>evidence.evaluatedAt||evidence.confirmedAt!==null&&evidence.confirmedAt<evidence.signedUpAt)return stopped('invalid_event_order');
+ const readiness=referralQualificationReadiness(policy);
+ if(!readiness.ready)return {...stopped('terms_incomplete'),missing:readiness.missing};
+ const p=policy.terms;
+ if(evidence.clickedAt<p.effectiveAt||evidence.signedUpAt<p.effectiveAt)return stopped('before_effective_terms');
+ if(evidence.signedUpAt-evidence.clickedAt>p.attributionDays*86400000)return stopped('attribution_expired');
+ if(evidence.confirmedAt===null)return stopped('confirmation_pending');
+ let qualifiedAt=evidence.confirmedAt,invoiceId=null;
+ if(p.qualification==='first_paid_month'){
+  const i=evidence.invoice;
+  if(i===null)return stopped('first_payment_pending');
+  if(!exact(i,['id','accountId','currency','status','month','paidAt','paidCents','taxCents','refundedCents'])||!/^in_[a-zA-Z0-9]+$/.test(i.id??'')||!UUID.test(i.accountId)||!['paid','open','void'].includes(i.status)||!integer(i.month,1,120)||!integer(i.paidAt,1,evidence.evaluatedAt)||!integer(i.paidCents,0,1000000000)||!integer(i.taxCents,0,i.paidCents)||!integer(i.refundedCents,0,i.paidCents))throw Error('INVALID_QUALIFICATION_INVOICE');
+  if(i.accountId!==evidence.referredUser)return stopped('payment_account_mismatch');
+  if(i.currency!=='cad')return stopped('payment_currency_mismatch');
+  if(i.month!==1)return stopped('not_first_paid_month');
+  if(i.status!=='paid'||i.paidCents<=i.taxCents)return stopped('first_payment_pending');
+  if(i.refundedCents>0)return stopped('refund_requires_review');
+  if(i.paidAt<evidence.signedUpAt)return stopped('invalid_payment_order');
+  qualifiedAt=Math.max(evidence.confirmedAt,i.paidAt);invoiceId=i.id;
+ }
+ const eligibleAt=qualifiedAt+p.holdingDays*86400000;
+ if(!Number.isSafeInteger(eligibleAt)||eligibleAt>8640000000000000)throw Error('INVALID_QUALIFICATION_TIME');
+ return {...base,wouldQualify:true,reason:evidence.evaluatedAt<eligibleAt?'holding_period':'qualified_after_hold',proposedRewardMonths:p.rewardMonths,qualifiedAt,eligibleAt,invoiceId,
+  deduplicationKey:'member_reward:'+evidence.referredUser,referralKey:'signup:'+evidence.referredUser};
+}
+
 export class ReferralAccounts {
  constructor(store){
   this.s=store;
