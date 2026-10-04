@@ -1,0 +1,8 @@
+import React,{useRef,useState} from 'react';
+import {View,PanResponder,Platform} from 'react-native';
+import {Button} from './ui';
+export default function SwipeEvent({children,enabled,onComplete,onSkip,onLater,onEdit,canLog,canComplete=canLog,disabled,name}:{children:React.ReactNode;enabled:boolean;canLog:boolean;canComplete?:boolean;onComplete:()=>void;onSkip:()=>void;onLater:()=>void;onEdit:()=>void;disabled:boolean;name:string}){
+ const [direction,setDirection]=useState<'actions'|'edit'|null>(null),current=useRef(enabled);current.current=enabled;
+ const responder=useRef(PanResponder.create({onMoveShouldSetPanResponder:(_,g)=>current.current&&Math.abs(g.dx)>20&&Math.abs(g.dx)>Math.abs(g.dy)*2,onPanResponderRelease:(_,g)=>{if(current.current&&Math.abs(g.dx)>65&&Math.abs(g.dx)>Math.abs(g.dy)*2)setDirection(g.dx<0?'actions':'edit');}})).current;
+ return <View style={Platform.OS==='web'?{touchAction:'pan-y',overscrollBehaviorX:'contain'} as any:undefined} {...responder.panHandlers}>{children}{enabled&&direction&&<View style={{padding:10,backgroundColor:'#eaf8f1',borderRadius:12}}>{direction==='actions'&&canComplete?<><Button label={'Confirm taken '+name} disabled={disabled} onPress={()=>{onComplete();setDirection(null);}}/>{canLog&&<><Button label={'Skip '+name} secondary disabled={disabled} onPress={()=>{onSkip();setDirection(null);}}/><Button label={'Remind later '+name} secondary disabled={disabled} onPress={()=>{onLater();setDirection(null);}}/></>}</>:<Button label={'Edit '+name+' plan'} secondary onPress={onEdit}/>}<Button label="Cancel swipe" secondary onPress={()=>setDirection(null)}/></View>}</View>;
+}

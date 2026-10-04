@@ -1,0 +1,49 @@
+require('./register-tests.cjs');
+const test=require('node:test'),assert=require('node:assert/strict'),Module=require('node:module'),{createHash}=require('node:crypto');
+const data=new Map(),storage={getItem:async k=>data.get(k)??null,setItem:async(k,v)=>data.set(k,v)};
+const original=Module._load;
+Module._load=function(request,parent,isMain){return request==='@react-native-async-storage/async-storage'?{__esModule:true,default:storage}:original.call(this,request,parent,isMain);};
+const {reminderId,projectReminders}=require('./app/src/reminder-projection.ts');
+const {ReminderOutbox}=require('./app/src/reminder-outbox.ts');
+const E=require('./app/src/engine.ts'),{library}=require('./app/src/library-v04.ts');
+function plan(){return E.activate({...E.newDraft(library[0]),id:'synthetic-plan',stages:[{id:'stage',amountMg:'1',amountUnit:'mg',weeks:'8',override:null}],defaultSchedule:{kind:'daily',days:[],times:['09:00'],interval:null},startDate:E.localDate(),breakWeeks:'0',vialMg:'10',waterMl:'2',initialVials:'1',reviewed:true});}
+test('reminder UUID matches independent domain separated v5 calculation',async()=>{const digest=createHash('sha1').update(Buffer.from('ac7c91bf18955b0f957f15cd7cac11b0','hex')).update(JSON.stringify(['event','user','plan','event'])).digest().subarray(0,16);digest[6]=(digest[6]&15)|80;digest[8]=(digest[8]&63)|128;assert.equal((await reminderId('user','plan','event')).replaceAll('-',''),digest.toString('hex'));assert.notEqual(await reminderId('user','plan','event'),await reminderId('other','plan','event'));await assert.rejects(reminderId('user','plan','bad\0id'));});
+test('projection contains only reminder IDs and times, preserves saved records and renews bounded coverage',async()=>{const p=plan(),before=JSON.stringify(p),now=new Date(),r=await projectReminders('u',[p],[],now);assert.equal(JSON.stringify(p),before);assert.ok(r.events.length>0);assert.ok(r.events.every(e=>Date.parse(e.due_at)>=+now&&Date.parse(e.due_at)<Date.parse(r.horizon_end)));assert.equal(Date.parse(r.horizon_end)-+now,29*86400000);assert.doesNotMatch(JSON.stringify(r),/compoundName|amountMg|inventory|vialMg/);});
+test('pause and reminder off suppress without terminally deleting future identities; resume restores',async()=>{const p=plan(),r=await projectReminders('u',[p]);const paused=await projectReminders('u',[{...p,pausedAt:new Date().toISOString()}]);assert.equal(paused.events.length,0);assert.deepEqual(paused.suppressed_plan_ids,[await reminderId('u',p.id)]);assert.equal(paused.archived_plan_ids.length,0);const off=await projectReminders('u',[{...p,reminderEnabled:false}]);assert.equal(off.events.length,0);assert.deepEqual((await projectReminders('u',[p])).events.map(e=>e.event_id),r.events.map(e=>e.event_id));});
+test('completion, skip and archive remove future alerts; early completion stays terminal',async()=>{const p=plan(),now=new Date(),future=p.events.find(e=>Date.parse(e.scheduledAt)>+now);assert.ok(future);const id=await reminderId('u',p.id,future.id);for(const status of ['completed','skipped']){const changed={...p,events:p.events.map(e=>e.id===future.id?{...e,status}:e)};const r=await projectReminders('u',[changed],[],now);assert.ok(r.removed_event_ids.includes(id));assert.ok(!r.events.some(e=>e.event_id===id));}const archived=await projectReminders('u',[],[p],now);assert.deepEqual(archived.archived_plan_ids,[await reminderId('u',p.id)]);assert.equal(archived.events.length,0);});
+test('snooze changes notification time without changing scheduled time or identity',async()=>{const p=plan(),now=new Date(),future=p.events.find(e=>Date.parse(e.scheduledAt)>+now),until=new Date(+now+900000).toISOString();const next={...p,events:p.events.map(e=>e.id===future.id?{...e,snoozedUntil:until}:e)};const r=await projectReminders('u',[next],[],now),e=r.events.find(e=>e.event_id===undefined);const row=r.events.find(e=>e.due_at===until);assert.ok(row);assert.equal(row.event_id,await reminderId('u',p.id,future.id));assert.equal(next.events.find(e=>e.id===future.id).scheduledAt,future.scheduledAt);});
+test('outbox restart retries an identical request after lost response',async()=>{const calls=[];let fail=true;const q=new ReminderOutbox(async(u,b)=>{calls.push(JSON.parse(JSON.stringify(b)));if(fail)throw Error('network');return {accepted:true,revision:2};},()=>'retry');await q.enqueue('retry','cancel_event',{event_id:'event',reason:'completed'});await assert.rejects(q.flush('retry',async()=>1));const saved=await q.read('retry');saved.items[0].next=0;await storage.setItem('ezpep.reminders.outbox.v1:retry',JSON.stringify(saved));fail=false;const restarted=new ReminderOutbox(async(u,b)=>{calls.push(b);return {accepted:true,revision:2};},()=>'retry');await restarted.flush('retry',async()=>999);assert.deepEqual(calls[0],calls[1]);assert.equal((await restarted.read('retry')).items.length,0);});
+test('coalescing preserves terminal cancellation identifiers',async()=>{const q=new ReminderOutbox(async()=>{},()=>'merge');await q.enqueue('merge','replace_future',{removed_event_ids:['taken'],archived_plan_ids:['archived']});await q.enqueue('merge','replace_future',{removed_event_ids:[],archived_plan_ids:[]});const state=await q.read('merge');assert.equal(state.items.length,1);assert.deepEqual(state.items[0].fields.removed_event_ids,['taken']);assert.deepEqual(state.items[0].fields.archived_plan_ids,['archived']);});
+test('account switch blocks network; revision conflict preserves work and requires review',async()=>{let calls=0,account='other';const q=new ReminderOutbox(async()=>{calls++;throw Object.assign(Error('conflict'),{code:'REVISION_CONFLICT'});},()=>account);await q.enqueue('conflict','cancel_event',{event_id:'id',reason:'completed'});assert.equal((await q.flush('conflict',async()=>0)).accountChanged,true);assert.equal(calls,0);account='conflict';assert.equal((await q.flush('conflict',async()=>0)).conflict,true);assert.equal((await q.read('conflict')).items.length,1);await q.rebase('conflict',{horizon_start:new Date().toISOString()});const s=await q.read('conflict');assert.equal(s.items[0].action,'cancel_event');assert.equal(s.conflict,false);});
+
+test('bulk enable changes only active reminder flags and survives planner persistence',()=>{
+ const {enableActivePlanReminders}=require('./app/src/reminder-projection.ts'),{encodePlannerStore,decodePlannerStore}=require('./app/src/persistence-v04.ts');
+ const p={...plan(),reminderEnabled:false},q={...plan(),id:'paused',pausedAt:new Date().toISOString(),reminderEnabled:false},a={...plan(),id:'archived',reminderEnabled:false};
+ const original={...E.blankStore(),active:p,activePlans:[p,q],archives:[a]},before=JSON.stringify(original);
+ const next=enableActivePlanReminders(original);
+ assert.equal(JSON.stringify(original),before);assert.equal(next.activePlans[0].reminderEnabled,true);assert.equal(next.activePlans[1],q);assert.equal(next.archives,original.archives);
+ assert.deepEqual({...next.activePlans[0],reminderEnabled:false},p);assert.equal(next.active,next.activePlans[0]);
+ const restored=decodePlannerStore(encodePlannerStore(next));assert.equal(restored.activePlans[0].reminderEnabled,true);assert.equal(restored.activePlans[1].reminderEnabled,false);assert.equal(restored.archives[0].reminderEnabled,false);
+ const legacy=enableActivePlanReminders({...E.blankStore(),active:p});assert.equal(legacy.active.reminderEnabled,true);
+});
+
+const {createReminderStorage}=require('./app/src/reminder-storage.ts');
+function memoryStorage(){const map=new Map();return {map,getItem:async k=>map.get(k)??null,setItem:async(k,v)=>{map.set(k,v);}};}
+test('full browser storage falls back for reminder queue and metadata without changing planner values',async()=>{
+ const primary=memoryStorage(),durable=memoryStorage();primary.map.set('planner','keep');primary.setItem=async()=>{throw new DOMException('full','QuotaExceededError');};
+ const storage=createReminderStorage(primary,durable),queue=new ReminderOutbox(async()=>({accepted:true,revision:1}),()=>'quota',storage);
+ await queue.enqueue('quota','cancel_event',{event_id:'taken',reason:'completed'});
+ await storage.setItem('ezpep.reminders.enabled.v1:quota','true');
+ const restarted=new ReminderOutbox(async()=>({accepted:true,revision:1}),()=>'quota',createReminderStorage(primary,durable));
+ assert.equal((await restarted.read('quota')).items.length,1);assert.equal(await storage.getItem('ezpep.reminders.enabled.v1:quota'),'true');
+ await restarted.flush('quota',async()=>0);assert.equal((await restarted.read('quota')).items.length,0);assert.equal(primary.map.get('planner'),'keep');
+});
+test('failed durable commit prevents reminder network sends and hides raw storage keys',async()=>{
+ const primary=memoryStorage(),durable=memoryStorage();primary.setItem=durable.setItem=async()=>{throw new DOMException('private-key','QuotaExceededError');};let calls=0;
+ const q=new ReminderOutbox(async()=>{calls++;return {accepted:true,revision:1};},()=>'failed',createReminderStorage(primary,durable));
+ await assert.rejects(q.enqueue('failed','cancel_event',{event_id:'taken',reason:'completed'}),e=>/Reminder updates could not be saved/.test(e.message)&&!e.message.includes('private-key'));assert.equal(calls,0);
+});
+test('durable reminder queue stays authoritative after primary storage recovers',async()=>{
+ const primary=memoryStorage(),durable=memoryStorage();primary.map.set('queue','stale');durable.map.set('queue','new');const storage=createReminderStorage(primary,durable);
+ await storage.setItem('queue','newest');assert.equal(await createReminderStorage(primary,durable).getItem('queue'),'newest');assert.equal(primary.map.get('queue'),'stale');
+});

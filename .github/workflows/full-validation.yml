@@ -1,0 +1,43 @@
+name: EZPep full validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop/0.4-multiplan
+    paths:
+      - app/**
+      - "*.cjs"
+      - package.json
+      - package-lock.json
+      - .github/workflows/full-validation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  full-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install test dependencies
+        run: npm ci
+      - name: Run complete test suite
+        run: npm test
+      - name: Install application dependencies
+        working-directory: app
+        run: npm ci
+      - name: TypeScript
+        working-directory: app
+        run: npx tsc --noEmit
+      - name: Expo dependency compatibility
+        working-directory: app
+        run: npx expo install --check
+      - name: Expo Doctor
+        working-directory: app
+        run: npx expo-doctor
