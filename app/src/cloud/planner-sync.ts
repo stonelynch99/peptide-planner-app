@@ -14,6 +14,8 @@ function normalized(value:unknown):string{
   const compact=encodeCompactPlannerStore(decodeCompactPlannerStore(typeof value==='string'?value:JSON.stringify(value)));
   return canonicalJson(JSON.parse(compact));
 }
+/** The same compact, canonical representation stored in automatic sync baselines. */
+export function plannerSyncPayload(store:Store):string{return normalized(encodeCompactPlannerStore(store));}
 function planCount(payload:string){
   const store=decodeCompactPlannerStore(payload);
   return (store.activePlans?.length??0)+store.archives.length;

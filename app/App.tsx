@@ -791,7 +791,21 @@ export default function App() {
     </ScrollView>
   );
 
-  const appUpdates=useQuietRelease(saved.ready&&!saved.loadFailed&&!saved.error&&!saved.saving&&betaAccount.state.status==='eligible'&&cloudSync.state.kind==='upToDate'&&!saved.store.draft&&!saved.store.activeEdit&&!currentEdit&&!editingActive&&!feedbackSubmitting&&!feedbackBusy.current&&!feedbackText&&!feedbackShots.length&&!feedbackPending.length&&!importing&&!importPreview&&!restoreCandidate&&!restoringBackup&&!cloudGuideOpen&&!membershipOpen&&!betaAccount.state.recovery&&['tracker','plans','more','school','settings'].includes(screen),betaAccount.state.userId??null,saved.store);
+  const updateBlockers:string[]=[];
+  if(!saved.ready)updateBlockers.push('your saved planner is still opening');
+  if(saved.loadFailed||saved.error)updateBlockers.push('a local save or recovery needs attention');
+  if(saved.saving)updateBlockers.push('a local save is still running');
+  if(betaAccount.state.status!=='eligible')updateBlockers.push('your account access needs checking');
+  if(!['upToDate','local'].includes(cloudSync.state.kind))updateBlockers.push(cloudSync.state.label.toLowerCase());
+  if(saved.store.draft||saved.store.activeEdit||currentEdit||editingActive)updateBlockers.push('a plan draft or edit is open');
+  if(feedbackSubmitting||feedbackBusy.current||feedbackText||feedbackShots.length||feedbackPending.length)updateBlockers.push('feedback is unfinished or still uploading');
+  if(importing||importPreview)updateBlockers.push('a data import is open');
+  if(restoreCandidate||restoringBackup)updateBlockers.push('a backup recovery is open');
+  if(cloudGuideOpen)updateBlockers.push('the cloud-copy review is open');
+  if(membershipOpen)updateBlockers.push('the account screen is open');
+  if(betaAccount.state.recovery)updateBlockers.push('password recovery is open');
+  if(!['tracker','plans','more','school','settings'].includes(screen))updateBlockers.push('finish the current planning screen');
+  const appUpdates=useQuietRelease(saved.ready&&!saved.loadFailed&&!saved.error&&!saved.saving&&betaAccount.state.status==='eligible'&&(cloudSync.state.kind==='upToDate'||cloudSync.state.kind==='local')&&!saved.store.draft&&!saved.store.activeEdit&&!currentEdit&&!editingActive&&!feedbackSubmitting&&!feedbackBusy.current&&!feedbackText&&!feedbackShots.length&&!feedbackPending.length&&!importing&&!importPreview&&!restoreCandidate&&!restoringBackup&&!cloudGuideOpen&&!membershipOpen&&!betaAccount.state.recovery&&['tracker','plans','more','school','settings'].includes(screen),betaAccount.state.userId??null,saved.store,updateBlockers);
 
   if(!saved.ready)return <SafeAreaProvider><SafeAreaView style={styles.safe}><Text style={styles.detailTitle}>Opening your saved plan…</Text></SafeAreaView></SafeAreaProvider>;
   if(saved.loadFailed)return <SafeAreaProvider><SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.welcomeContent}>
