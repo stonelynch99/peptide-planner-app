@@ -79,7 +79,8 @@ function heading(root,title,copy){root.append(node('h3',title));if(copy)root.app
 function metric(root,label,value){const box=node('div',undefined,'account-metric');box.append(node('span',label),node('strong',value));root.append(box);}
 function counts(root,t,owner=false){
  const grid=node('div',undefined,'account-metrics');
- for(const [label,key] of [['Signups','signups'],['Qualified','qualified'],['Pending referrals','pending'],['Pending Pro months','pendingMonths'],['Earned Pro months','earnedMonths'],['Used Pro months','redeemedMonths']])metric(grid,label,number(t[key]));
+ for(const [label,key] of [['Signups','signups'],['Qualified','qualified'],['Pending referrals','pending']])metric(grid,label,number(t[key]));
+ if(!owner||accountView?.account.role==='owner')for(const [label,key] of [['Pending Pro months','pendingMonths'],['Earned Pro months','earnedMonths'],['Available Pro months','availableMonths'],['Used Pro months','redeemedMonths']])metric(grid,label,number(t[key]));
  if(owner)for(const [label,key] of [['Pending commissions','pendingCents'],['Earned, after refunds','earnedCents'],['Paid commissions','paidCents'],['Commissions owed','owedCents']])metric(grid,label,money(number(t[key])));
  if(owner&&number(t.balanceCents)<0)metric(grid,'Refund balance to review',money(-t.balanceCents));
  root.append(grid);
@@ -211,7 +212,7 @@ function renderDashboard(value){
  if(accountSection==='overview'){
   const summary=node('div',undefined,'account-metrics');
   if(role==='member'){metric(summary,'Qualified referrals',number(v.totals.qualified));metric(summary,'Earned Pro months',number(v.totals.earnedMonths));metric(summary,'Available Pro months',number(v.totals.availableMonths));}
-  else{metric(summary,'Qualified referrals',number(v.totals.qualified));metric(summary,'Earned commissions',money(number(v.totals.earnedCents)));metric(summary,'Commissions owed',money(number(v.totals.owedCents)));}
+  else{metric(summary,'Qualified referrals',number(v.totals.qualified));metric(summary,'Pending commissions',money(number(v.totals.pendingCents)));metric(summary,'Earned commissions',money(number(v.totals.earnedCents)));metric(summary,'Commissions owed',money(number(v.totals.owedCents)));}
   main.append(summary);
   const two=node('div',undefined,'account-two');main.append(two);renderShare(two,v);
   const rewards=card(two,role==='member'?'Your Pro rewards':'Recorded payouts',role==='member'?'Free Pro months earned by referring friends.':'Commission payouts stay separate from member Pro rewards.');
@@ -221,9 +222,11 @@ function renderDashboard(value){
   const disclosure=node('details'),disclosureTitle=node('summary',role==='member'?'Pending and used Pro months':'Pending, earned, paid and owed');disclosure.append(disclosureTitle);
   if(role==='member')disclosure.append(node('p',number(v.totals.pendingMonths)+' pending Pro months · '+number(v.totals.redeemedMonths)+' used. Rewards are free Pro access; they are not cash commissions.'));
   else{counts(disclosure,v.totals,true);disclosure.append(node('p','Pending awaits qualification. Earned is after recorded refunds; paid is a recorded payout. Owed is the outstanding commission balance.'));}
-  details.append(disclosure);
+  details.append(disclosure,button(role==='member'?'View reward activity':'View commission activity',()=>selectSection('entries')));
+  if(role==='member')details.append(node('p','Pending months are not available to use. Available months are recorded rewards awaiting redemption; redemption remains paused.'));
+  else details.append(node('p','All amounts are CAD. These are referral commissions, not app revenue. Earning and payout activation remain paused.'));
   if(role==='influencer')renderTier(main,v);
-  const recent=card(main,'Recent referrals');void history(recent,'referrals');
+  const recent=card(main,'Recent referrals');const recentRecords=node('div');recent.append(recentRecords,button('View all referrals',()=>selectSection('referrals')));void history(recentRecords,'referrals');
  }else if(accountSection==='sharing')renderShare(main,v);
  else if(accountSection==='policy'){const panel=card(main,'Referral terms');termsSummary(panel,v.policy);if(role==='influencer')renderTier(main,v);}
  else {if(accountSection==='entries')counts(main,v.totals,role==='influencer');const panel=card(main,accountSection==='payouts'?'Payout history':accountSection==='entries'?'Reward & commission activity':'Your referrals');void history(panel,accountSection);}

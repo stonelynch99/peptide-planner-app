@@ -314,6 +314,28 @@ test('member terms describe free Pro access without influencer commissions',asyn
  assert.match(c.get('account-dashboard').textContent,/2 free Pro months/);
  assert.doesNotMatch(c.get('account-dashboard').textContent,/Influencer recurring commission|First-month commission/);
 });
+
+test('member nonzero rewards stay in months and activity button opens held history',async()=>{
+ const c=setup(),v=view();Object.assign(v.totals,{pendingMonths:2,earnedMonths:6,availableMonths:4,redeemedMonths:2,pendingCents:12345});
+ c.harness.renderDashboard(v);await tick();let root=c.get('account-dashboard');
+ assert.match(root.textContent,/Available Pro months 4/);assert.match(root.textContent,/2 pending Pro months · 2 used/);assert.match(root.textContent,/redemption remains paused/);
+ assert.doesNotMatch(root.textContent,/Pending commissions|\$123\.45/);
+ root.walk().find(e=>e.tagName==='button'&&e.textContent==='View reward activity').listeners.click();await tick();
+ assert.equal(c.location.hash,'#account/entries');assert.match(c.get('account-dashboard').textContent,/Earned Pro months 6/);assert.equal(JSON.parse(c.requests.at(-1).options.body).section,'entries');
+});
+test('influencer nonzero balances exclude member reward totals on overview and earnings',async()=>{
+ const c=setup(),v=view('influencer');Object.assign(v.totals,{pendingCents:42730,earnedCents:8000,paidCents:3000,owedCents:5000,pendingMonths:99,earnedMonths:99,availableMonths:99});
+ c.harness.renderDashboard(v);await tick();let root=c.get('account-dashboard');
+ assert.match(root.textContent,/Pending commissions \$427\.30/);assert.match(root.textContent,/Commissions owed \$50\.00/);assert.match(root.textContent,/All amounts are CAD/);
+ assert.doesNotMatch(root.textContent,/Pending Pro months|Earned Pro months|Available Pro months/);
+ root.walk().find(e=>e.tagName==='button'&&e.textContent==='View commission activity').listeners.click();await tick();
+ assert.equal(c.location.hash,'#account/entries');assert.doesNotMatch(c.get('account-dashboard').textContent,/Pending Pro months|Earned Pro months|Available Pro months/);
+});
+test('recent referral completion preserves the all referrals navigation button',async()=>{
+ const c=setup();c.harness.renderDashboard(view());await tick();const b=c.get('account-dashboard').walk().find(e=>e.tagName==='button'&&e.textContent==='View all referrals');
+ assert.ok(b);b.listeners.click();await tick();assert.equal(c.location.hash,'#account/referrals');assert.equal(JSON.parse(c.requests.at(-1).options.body).section,'referrals');
+});
+
 test('influencer home uses commissions and payouts rather than a member Pro reward card',async()=>{
  const c=setup();c.harness.renderDashboard(view('influencer'));await tick();
  assert.match(c.get('account-dashboard').textContent,/Recorded payouts/);
