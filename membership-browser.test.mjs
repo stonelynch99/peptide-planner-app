@@ -186,24 +186,28 @@ test('referral accounts: member history paginates all own records without accept
 
 }
 
+
 // Approved account portal regression checks.
 {
 const {createRequire}=await import('node:module'); const require=createRequire(import.meta.url);
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),{test}=require('node:test');
 class Element{
- constructor(tag='div'){this.tagName=tag;this.children=[];this.hidden=false;this.attrs={};this.listeners={};this.value='';this._text='';this.className='';this.classList={add:name=>this.className+=' '+name};}
+ constructor(tag='div'){this.tagName=tag;this.children=[];this.hidden=false;this.attrs={};this.listeners={};this.value='';this._text='';this.className='';this.classList={add:name=>this.className+=' '+name,toggle:(name,on)=>{this.className=this.className.split(' ').filter(x=>x!==name).join(' ');if(on)this.className+=' '+name;}};}
  set textContent(v){this._text=String(v);this.children=[];}get textContent(){return this._text+this.children.map(c=>c.textContent).join(' ');}
- append(...children){this.children.push(...children);for(const c of children)c.parent=this;}replaceChildren(...children){this._text='';this.children=[];this.append(...children);}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,fn){this.listeners[k]=fn;}remove(){this.parent.children=this.parent.children.filter(x=>x!==this);}
+ append(...children){for(const c of children){if(c.parent)c.remove();this.children.push(c);c.parent=this;}}replaceChildren(...children){this._text='';for(const c of this.children)c.parent=null;this.children=[];this.append(...children);}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,fn){this.listeners[k]=fn;}remove(){this.parent.children=this.parent.children.filter(x=>x!==this);}
  querySelector(selector){return this.walk().find(e=>selector==='[type="submit"]'?e.type==='submit':false);}
  walk(){return this.children.flatMap(x=>[x,...x.walk()]);}
 }
 const id='11111111-1111-4111-8111-111111111111';
-function setup(){
- const elements=new Map();const get=k=>{if(!elements.has(k))elements.set(k,new Element());return elements.get(k)};
- const source=fs.readFileSync(new URL('./app/public/website-preview/index.html', import.meta.url),'utf8').match(/\/\/ EZPEP_ACCOUNT_CLIENT_START[\s\S]*?\/\/ EZPEP_ACCOUNT_CLIENT_END/)[0].replace('// No URL token injection, planner storage access or public sign-up.',`globalThis.harness={renderDashboard,selectSection,editTerms,reset,setSession:s=>session=s,setDirty:v=>draftDirty=v,setRevision:v=>ownerRevision=v,history,holdView};`);
+function setup(fetcher){
+ const elements=new Map(),body=new Element('body');
+ for(const key of ['account-owner','account-editor','account-message','account-dashboard','account-login','account-email','account-password','account-connect','account-intro']){const e=new Element();e.id=key;elements.set(key,e);body.append(e);}
+ const get=k=>elements.get(k);const submit=new Element('button');submit.type='submit';get('account-login').append(submit);
+ const document={body,getElementById:k=>body.walk().find(e=>e.id===k)||null,createElement:tag=>new Element(tag)};const location={hash:''},windowListeners={};
+ const source=fs.readFileSync(new URL('./app/public/website-preview/index.html', import.meta.url),'utf8').match(/\/\/ EZPEP_ACCOUNT_CLIENT_START[\s\S]*?\/\/ EZPEP_ACCOUNT_CLIENT_END/)[0].replace('// No URL token injection, planner storage access or public sign-up.',`globalThis.harness={renderDashboard,selectSection,editTerms,reset,setSession:s=>session=s,setDirty:v=>draftDirty=v,setRevision:v=>ownerRevision=v,history,holdView,portalRoute,connect};`);
  const requests=[];
- const ctx={document:{getElementById:get,createElement:tag=>new Element(tag)},window:{addEventListener(){}},navigator:{clipboard:{writeText:async()=>{}}},AbortController,setTimeout,clearTimeout,Intl,Number,Math,Date,Set,WeakMap,fetch:async(url,options)=>{requests.push({url,options});let section=JSON.parse(options.body).section;return {ok:true,json:async()=>({...view('owner'),section,revision:1,rows:[],partnerCount:0,pagination:{total:0,offset:0,nextOffset:null}})}}};
- vm.runInNewContext(source,ctx);ctx.harness.setSession({userId:id,accessToken:'synthetic',expiresAt:Date.now()+3600000});return {...ctx,elements,get,requests};
+ const ctx={document,location,window:{addEventListener:(name,fn)=>windowListeners[name]=fn,history:{replaceState:(_,__,hash)=>location.hash=hash}},navigator:{clipboard:{writeText:async()=>{}}},AbortController,setTimeout,clearTimeout,Intl,Number,Math,Date,Set,WeakMap,fetch:async(url,options)=>{requests.push({url,options});if(fetcher)return fetcher(url,options);let section=JSON.parse(options.body).section;return {ok:true,json:async()=>({...view('owner'),section,revision:1,rows:[],partnerCount:0,pagination:{total:0,offset:0,nextOffset:null}})}}};
+ vm.runInNewContext(source,ctx);ctx.harness.setSession({userId:id,accessToken:'synthetic',expiresAt:Date.now()+3600000});return {...ctx,elements,get,requests,body,windowListeners};
 }
 function view(role='member') {return {schemaVersion:1,mode:'preparation',account:{id,role,pendingRole:null},holds:{liveBilling:false,payouts:false,promotions:false,publicSignup:false,referrals:false},totals:{signups:0,qualified:0,pending:0,pendingMonths:0,earnedMonths:0,redeemedMonths:0,availableMonths:0,pendingCents:0,earnedCents:0,paidCents:0,owedCents:0,balanceCents:0},policy:null,tierProgress:{tier:null},sharing:{referralUrl:null}};}
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -215,5 +219,35 @@ test('member role refresh removes prior owner table and navigation',async()=>{co
 test('identity and activation mismatch fail closed before rendering',()=>{const c=setup();let v=view();v.holds.payouts=true;assert.throws(()=>c.harness.renderDashboard(v),/INVALID_ACCOUNT_RESPONSE/);v=view();v.account.id='another';assert.throws(()=>c.harness.renderDashboard(v),/INVALID_ACCOUNT_RESPONSE/);assert.equal(c.get('account-dashboard').children.length,0);});
 
 test('role revocation hides owner controls while retaining an unsaved draft',async()=>{const c=setup();c.harness.renderDashboard(view('owner'));await tick();c.harness.editTerms(null,null);c.harness.setDirty(true);const form=c.get('account-editor').children[0];c.harness.renderDashboard(view());assert.equal(c.get('account-owner').hidden,true);assert.equal(c.get('account-editor').hidden,true);assert.equal(c.get('account-editor').children[0],form);});
+
+test('owner navigation keeps real document containers attached across every screen',async()=>{
+ const c=setup();c.harness.renderDashboard(view('owner'));await tick();
+ for(const section of ['partners','settings','entries','payouts','terms','audit','membership','help','overview']){
+  c.harness.selectSection(section);await tick();
+  assert.equal(c.document.getElementById('account-owner'),c.get('account-owner'));
+  assert.equal(c.document.getElementById('account-editor'),c.get('account-editor'));
+  assert.equal(c.location.hash,'#account/'+section);
+ }
+});
+test('account route switches marketing out and protects an unfinished draft on hash navigation',()=>{
+ const c=setup();c.location.hash='#account';c.harness.portalRoute();assert.match(c.body.className,/account-mode/);
+ c.harness.setDirty(true);c.location.hash='#pricing';c.harness.portalRoute();assert.equal(c.location.hash,'#account/overview');assert.match(c.get('account-message').textContent,/unfinished draft/);
+});
+test('membership and help stay within the portal without invoking owner ledger reads',async()=>{
+ const c=setup();c.harness.renderDashboard(view('owner'));await tick();const before=c.requests.length;
+ c.harness.selectSection('membership');await tick();assert.match(c.get('account-dashboard').textContent,/Private beta access verified/);assert.match(c.get('account-dashboard').textContent,/Paid membership enrollment is not open/);assert.equal(c.requests.length,before);
+ c.harness.selectSection('help');const links=c.get('account-dashboard').walk().filter(e=>e.tagName==='a'&&e.href?.includes('#membership'));assert.equal(links[0].target,'_blank');
+});
+test('whole sign-in submission verifies identity, loads dashboard and re-enables submit',async()=>{
+ const reply=v=>({ok:true,json:async()=>v});const c=setup(async(url)=>{
+  if(url.endsWith('/config'))return reply({enabled:true,publicSignup:false,project:'https://csolruvoeukctlybiemd.supabase.co',publishable:'sb_publishable_synthetic',authentication:'existing_beta'});
+  if(url.includes('grant_type=password'))return reply({access_token:'synthetic',refresh_token:'synthetic-refresh',expires_in:3600});
+  if(url.endsWith('/auth/v1/user'))return reply({id});
+  if(url.endsWith('/dashboard'))return reply(view());
+  return reply({...view(),rows:[],pagination:{total:0,offset:0,nextOffset:null}});
+ });
+ await c.harness.connect();c.get('account-email').value='test@example.invalid';c.get('account-password').value='synthetic-test';await c.get('account-login').listeners.submit({preventDefault(){}});await tick();
+ assert.equal(c.get('account-dashboard').hidden,false);assert.equal(c.get('account-login').hidden,true);assert.equal(c.get('account-password').value,'');assert.equal(c.get('account-login').querySelector('[type="submit"]').disabled,false);assert.equal(c.get('account-intro').hidden,true);
+});
 
 }
