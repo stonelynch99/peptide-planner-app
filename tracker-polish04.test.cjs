@@ -59,7 +59,10 @@ test('first-run guidance keeps navigation stable and Today becomes Start Here be
  assert.match(app,/plans\.length\|\|saved\.store\.draft/);
  assert.match(app,/const recommended=onboarding\?\.goal===\"learn\"\?0:onboarding\?\.goal===\"research\"\?1:2/);
  assert.match(app,/draft\?\"Continue your plan\":\"Build your plan\"/);
- assert.match(app,/Local storage, import, export and recovery/);
+ for(const label of ['YOUR PLANNER','YOUR ACCOUNT','HELP & FEEDBACK','Backup & data','App updates','Quick Start','About EZPep','Import data from another app','Restore EZPep backup','Export local backup','Your account & cloud'])assert.ok(app.includes(label),label+' remains available');
+ assert.match(app,/settingsSection==='home'/);
+ assert.match(app,/settingsSection==='data'/);
+ assert.match(app,/settingsSection==='updates'/);
  assert.doesNotMatch(app,/Local storage, export and deletion controls/);
 });
 
