@@ -247,6 +247,20 @@ export class ReferralAccounts {
    CREATE TRIGGER IF NOT EXISTS account_reward_redemption BEFORE INSERT ON account_referral_redemptions WHEN NOT EXISTS(SELECT 1 FROM account_referral_current_entries e WHERE e.id=NEW.entry_id AND e.kind='reward' AND e.phase='earned' AND NEW.months+coalesce((SELECT sum(months) FROM account_referral_redemptions WHERE entry_id=NEW.entry_id),0)<=e.amount) BEGIN SELECT RAISE(ABORT,'INVALID_REWARD_REDEMPTION'); END;
   `);
  }
+
+ // Fixed owner-approved launch drafts. Existing global/individual terms always win.
+ initializeLaunchDraft(owner){
+  if(!UUID.test(owner??''))throw Error('OWNER_REQUIRED');
+  return this.s.tx(()=>{
+   if(this.s.get("SELECT version FROM account_referral_terms WHERE scope='global' LIMIT 1"))return {initialized:false,revision:this.revision()};
+   const terms=validateReferralTerms({rewardMonths:2,tiers:[{through:null,firstMonthBps:8000}],recurringBps:1500,effectiveAt:null,qualification:'first_paid_month',attributionDays:null,holdingDays:null,renewalMonths:null,payoutTerms:null});
+   const version=(this.s.get('SELECT max(version) v FROM account_referral_terms').v??0)+1,at=Date.now();
+   this.s.run("INSERT INTO account_referral_terms VALUES(?,'global',NULL,?,'draft',?,?)",version,JSON.stringify(terms),owner,at);
+   this.s.run('UPDATE account_referral_meta SET revision=revision+1 WHERE id=1');
+   this.s.run('INSERT INTO account_referral_audit VALUES(?,?,?,?,?,?,?)',randomUUID(),owner,'terms',null,this.revision(),'Owner approved launch starting figures on 2026-10-04: two Pro reward months; 80% first month and 15% recurring. Activation stays held.',at);
+   return {initialized:true,saved:'draft',version,revision:this.revision(),holds:ACCOUNT_HOLDS,activationChanged:false};
+  });
+ }
  revision(){return this.s.get('SELECT revision FROM account_referral_meta WHERE id=1').revision;}
  ensure(user){
   if(!UUID.test(user??''))throw Error('AUTH_REQUIRED');

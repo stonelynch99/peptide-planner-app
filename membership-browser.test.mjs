@@ -191,7 +191,8 @@ test('referral accounts: TEST billing allowlist and browser role claims cannot g
 });
 test('referral accounts: owner reads and draft changes use current authenticated identity',async()=>{
  const f=httpFixture({who:owner});const initial=await f.h(request('/accounts/owner/view'));assert.equal(initial.status,200);
- const body={action:'terms',expectedRevision:1,reason:'Synthetic owner edit',target:null,terms:terms()};const r=await f.h(request('/accounts/owner/draft',body));assert.equal(r.status,200);assert.equal((await r.json()).saved,'draft');
+ const initialView=await initial.json();assert.equal(initialView.revision,2);assert.deepEqual(initialView.policy.terms.tiers,[{through:null,firstMonthBps:8000}]);assert.equal(initialView.policy.terms.rewardMonths,2);assert.equal(initialView.policy.terms.recurringBps,1500);
+ const body={action:'terms',expectedRevision:initialView.revision,reason:'Synthetic owner edit',target:null,terms:terms()};const r=await f.h(request('/accounts/owner/draft',body));assert.equal(r.status,200);assert.equal((await r.json()).saved,'draft');
  assert.equal((await f.h(request('/accounts/owner/draft',body))).status,400);assert.equal(f.external(),0);
 });
 test('referral accounts: signup, qualification, rewards activation and payout writes have no public route',async()=>{
@@ -317,6 +318,40 @@ test('influencer home uses commissions and payouts rather than a member Pro rewa
  const c=setup();c.harness.renderDashboard(view('influencer'));await tick();
  assert.match(c.get('account-dashboard').textContent,/Recorded payouts/);
  assert.doesNotMatch(c.get('account-dashboard').textContent,/Your Pro rewards|Available Pro months/);
+});
+
+}
+
+{
+const user='00000000-0000-4000-8000-000000000001',Store=ProposalStore,ReferralAccounts=ProposalAccounts,ACCOUNT_HOLDS={publicSignup:false,liveBilling:false,referrals:false,promotions:false,payouts:false};
+test('approved launch figures initialize once as a held versioned draft',()=>{
+ const s=new Store(),a=new ReferralAccounts(s),r=a.initializeLaunchDraft(user);
+ assert.equal(r.initialized,true);assert.equal(r.activationChanged,false);
+ assert.deepEqual(r.holds,ACCOUNT_HOLDS);const p=a.terms(null);
+ assert.equal(p.state,'draft');assert.equal(p.terms.rewardMonths,2);assert.equal(p.terms.qualification,'first_paid_month');
+ assert.deepEqual(p.terms.tiers,[{through:null,firstMonthBps:8000}]);assert.equal(p.terms.recurringBps,1500);
+ for(const k of ['effectiveAt','attributionDays','holdingDays','renewalMonths','payoutTerms'])assert.equal(p.terms[k],null);
+ const revision=a.revision();assert.equal(a.initializeLaunchDraft(user).initialized,false);assert.equal(a.revision(),revision);
+ assert.equal(s.get('SELECT count(*) n FROM account_referral_audit').n,1);
+ assert.equal(s.get('SELECT count(*) n FROM subscriptions').n,0);
+ assert.equal(s.get('SELECT count(*) n FROM account_referral_entries').n,0);
+});
+test('owner edits survive restart initialization and retain original launch terms',()=>{
+ const s=new Store(),a=new ReferralAccounts(s);a.initializeLaunchDraft(user);
+ const first=a.terms(null),next={...first.terms,rewardMonths:3,recurringBps:2000};
+ a.draft(user,{action:'terms',target:null,terms:next,expectedRevision:a.revision(),reason:'Future owner adjustment'});
+ const revision=a.revision();assert.equal(new ReferralAccounts(s).initializeLaunchDraft(user).initialized,false);
+ assert.equal(a.revision(),revision);assert.equal(a.terms(null).terms.rewardMonths,3);
+ assert.deepEqual(JSON.parse(s.get('SELECT terms FROM account_referral_terms WHERE version=?',first.version).terms),first.terms);
+});
+test('initial launch draft retains existing custom global and individual terms',()=>{
+ const s=new Store(),a=new ReferralAccounts(s);a.ensure(user);
+ const custom={rewardMonths:1,tiers:[{through:null,firstMonthBps:4000}],recurringBps:500,effectiveAt:null,qualification:'first_paid_month',attributionDays:null,holdingDays:null,renewalMonths:null,payoutTerms:null};
+ a.draft(user,{action:'terms',target:null,terms:custom,expectedRevision:a.revision(),reason:'Existing global agreement'});
+ a.draft(user,{action:'terms',target:user,terms:{...custom,recurringBps:700},expectedRevision:a.revision(),reason:'Individual agreement'});
+ const revision=a.revision();assert.equal(a.initializeLaunchDraft(user).initialized,false);assert.equal(a.revision(),revision);
+ assert.deepEqual(a.terms(null).terms,custom);assert.equal(a.terms(user).terms.recurringBps,700);
+ assert.throws(()=>a.initializeLaunchDraft('not-an-owner'),/OWNER_REQUIRED/);
 });
 
 }

@@ -4,7 +4,10 @@ const ORIGIN='https://app.ezpepplanner.com',WEBSITE='https://ezpepplanner.com';
 const ownerAllowed=(user,config)=>Array.isArray(config.accountOwners)&&config.accountOwners.includes(user);
 function publicKey(key){if(typeof key!=='string'||key.length>2048)return false;if(/^sb_publishable_[A-Za-z0-9_-]+$/.test(key))return true;try{return JSON.parse(Buffer.from(key.split('.')[1],'base64url').toString()).role==='anon';}catch{return false;}}
 
-export function handler(store,config,fetcher=fetch){const stripe=new StripeTest(config,fetcher),service=new Membership(store,stripe);return async request=>{
+export function handler(store,config,fetcher=fetch){const stripe=new StripeTest(config,fetcher),service=new Membership(store,stripe);
+ // Initialize only the owner-approved preparation draft; never enables a launch hold.
+ if(config.accountWebsiteEnabled===true&&Array.isArray(config.accountOwners)&&config.accountOwners.length===1)new ReferralAccounts(store).initializeLaunchDraft(config.accountOwners[0]);
+ return async request=>{
  const accountPath=new URL(request.url).pathname.startsWith('/accounts/');
  const origin=request.headers.get('origin'),allowedOrigin=origin===ORIGIN||(accountPath&&origin===WEBSITE),headers={'content-type':'application/json','cache-control':'no-store','vary':'Origin',...(allowedOrigin?{'access-control-allow-origin':origin}:{})};const reply=(status,value)=>new Response(JSON.stringify(value),{status,headers});
  if(origin&&!allowedOrigin)return reply(403,{error:'ORIGIN_REJECTED'});if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{...headers,'access-control-allow-methods':'POST, OPTIONS','access-control-allow-headers':'authorization, content-type'}});
