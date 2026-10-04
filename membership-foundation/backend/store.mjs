@@ -56,3 +56,150 @@ export class Store {
  this.run('INSERT INTO events VALUES(?,?,?)',event.id,event.hash,Date.now());return {verified:true};});}
  membership(user,now=Date.now()){const s=this.all('SELECT * FROM subscriptions WHERE user_id=?',user);return {pro:s.some(x=>x.paid_until>now&&!x.refunded&&['active','past_due'].includes(x.status)),beta_access:'unchanged',planner_data:'unchanged'};}
 }
+/** Website accounts preparation. Separate tables; never reads or writes planner/auth/billing data.
+ * This release provides read views and draft owner controls only. Qualification, entitlement
+ * issuance and money movement have no HTTP entry point and remain disabled.
+ */
+export const ACCOUNT_HOLDS=Object.freeze({publicSignup:false,liveBilling:false,referrals:false,promotions:false,payouts:false});
+const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+const integer=(v,min,max)=>Number.isSafeInteger(v)&&v>=min&&v<=max;
+const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')===keys.slice().sort().join(',');
+export function validateReferralTerms(input){
+ const fields=['rewardMonths','tiers','recurringBps','effectiveAt','qualification','attributionDays','holdingDays','renewalMonths','payoutTerms'];
+ if(!exact(input,fields))throw Error('INVALID_TERMS');
+ const p=structuredClone(input);
+ if(p.rewardMonths!==null&&!integer(p.rewardMonths,1,3))throw Error('INVALID_REWARD_MONTHS');
+ if(p.recurringBps!==null&&!integer(p.recurringBps,0,10000))throw Error('INVALID_RECURRING_RATE');
+ if(p.effectiveAt!==null&&!integer(p.effectiveAt,1,8640000000000000))throw Error('INVALID_EFFECTIVE_DATE');
+ for(const [key,min,max] of [['attributionDays',1,365],['holdingDays',0,365],['renewalMonths',1,120]])if(p[key]!==null&&!integer(p[key],min,max))throw Error('INVALID_TERMS');
+ for(const key of ['qualification','payoutTerms'])if(p[key]!==null&&(typeof p[key]!=='string'||!p[key].trim()||p[key].length>500))throw Error('INVALID_TERMS');
+ if(!Array.isArray(p.tiers)||p.tiers.length>8)throw Error('INVALID_TIERS');
+ let previous=0;
+ p.tiers.forEach((tier,i)=>{
+  if(!exact(tier,['through','firstMonthBps'])||!integer(tier.firstMonthBps,0,10000))throw Error('INVALID_TIERS');
+  if(tier.through===null){if(i!==p.tiers.length-1)throw Error('INVALID_TIERS');}
+  else {if(!integer(tier.through,previous+1,1000000))throw Error('INVALID_TIERS');previous=tier.through;}
+ });
+ if(p.tiers.length&&p.tiers.at(-1).through!==null)throw Error('OPEN_FINAL_TIER_REQUIRED');
+ return p;
+}
+// Integer arithmetic: a later draft never changes amounts already recorded in the ledger.
+export function referralCommission(netCents,signupOrdinal,firstMonth,terms){
+ const p=validateReferralTerms(terms);
+ if(!integer(netCents,0,1000000000)||!integer(signupOrdinal,1,1000000)||typeof firstMonth!=='boolean')throw Error('INVALID_COMMISSION_INPUT');
+ const rate=firstMonth?p.tiers.find(t=>t.through===null||signupOrdinal<=t.through)?.firstMonthBps:p.recurringBps;
+ if(rate===null||rate===undefined)throw Error('COMMISSION_TERMS_PENDING');
+ return Math.floor(netCents*rate/10000);
+}
+export class ReferralAccounts {
+ constructor(store){
+  this.s=store;
+  store.db.exec(`
+   CREATE TABLE IF NOT EXISTS account_referral_meta(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL);
+   INSERT OR IGNORE INTO account_referral_meta VALUES(1,1);
+   CREATE TABLE IF NOT EXISTS account_referral_partners(user_id TEXT PRIMARY KEY,code TEXT UNIQUE NOT NULL,role TEXT NOT NULL CHECK(role IN ('member','influencer')),pending_role TEXT CHECK(pending_role IS NULL OR pending_role='influencer'),created_at INTEGER NOT NULL);
+   CREATE TABLE IF NOT EXISTS account_referral_terms(version INTEGER PRIMARY KEY,scope TEXT NOT NULL,partner_id TEXT REFERENCES account_referral_partners(user_id),terms TEXT NOT NULL,state TEXT NOT NULL CHECK(state='draft'),created_by TEXT NOT NULL,created_at INTEGER NOT NULL);
+   CREATE TABLE IF NOT EXISTS account_referral_signups(id TEXT PRIMARY KEY,partner_id TEXT NOT NULL REFERENCES account_referral_partners(user_id),referred_user TEXT UNIQUE NOT NULL,state TEXT NOT NULL CHECK(state IN ('pending','qualified','rejected')),term_version INTEGER REFERENCES account_referral_terms(version),created_at INTEGER NOT NULL,qualified_at INTEGER,CHECK(partner_id<>referred_user));
+   CREATE TABLE IF NOT EXISTS account_referral_entries(id TEXT PRIMARY KEY,partner_id TEXT NOT NULL REFERENCES account_referral_partners(user_id),referral_id TEXT NOT NULL REFERENCES account_referral_signups(id),source_key TEXT UNIQUE NOT NULL,term_version INTEGER NOT NULL REFERENCES account_referral_terms(version),kind TEXT NOT NULL CHECK(kind IN ('reward','commission','refund_adjustment')),phase TEXT NOT NULL CHECK(phase IN ('pending','earned')),amount INTEGER NOT NULL,currency TEXT CHECK(currency IS NULL OR currency='cad'),created_at INTEGER NOT NULL,CHECK((kind='reward' AND currency IS NULL AND amount>0) OR (kind='commission' AND currency='cad' AND amount>=0) OR (kind='refund_adjustment' AND currency='cad' AND amount<=0)));
+   CREATE TABLE IF NOT EXISTS account_referral_payouts(id TEXT PRIMARY KEY,partner_id TEXT NOT NULL REFERENCES account_referral_partners(user_id),reference TEXT UNIQUE NOT NULL,currency TEXT NOT NULL CHECK(currency='cad'),amount INTEGER NOT NULL CHECK(amount>0),paid_at INTEGER NOT NULL);
+   CREATE TABLE IF NOT EXISTS account_referral_payout_items(entry_id TEXT NOT NULL REFERENCES account_referral_entries(id),payout_id TEXT NOT NULL REFERENCES account_referral_payouts(id),amount INTEGER NOT NULL CHECK(amount>0),PRIMARY KEY(entry_id,payout_id));
+   CREATE TABLE IF NOT EXISTS account_referral_entry_states(id TEXT PRIMARY KEY,entry_id TEXT NOT NULL REFERENCES account_referral_entries(id),source_key TEXT UNIQUE NOT NULL,phase TEXT NOT NULL CHECK(phase IN ('pending','earned','voided')),created_at INTEGER NOT NULL);
+   CREATE VIEW IF NOT EXISTS account_referral_current_entries AS SELECT e.id,e.partner_id,e.referral_id,e.source_key,e.term_version,e.kind,coalesce((SELECT phase FROM account_referral_entry_states st WHERE st.entry_id=e.id ORDER BY created_at DESC,id DESC LIMIT 1),e.phase) phase,e.amount,e.currency,e.created_at FROM account_referral_entries e;
+   CREATE TABLE IF NOT EXISTS account_referral_redemptions(id TEXT PRIMARY KEY,entry_id TEXT NOT NULL REFERENCES account_referral_entries(id),source_key TEXT UNIQUE NOT NULL,months INTEGER NOT NULL CHECK(months>0),created_at INTEGER NOT NULL);
+   CREATE TABLE IF NOT EXISTS account_referral_audit(id TEXT PRIMARY KEY,actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT,revision INTEGER NOT NULL,reason TEXT NOT NULL,created_at INTEGER NOT NULL);
+   CREATE TRIGGER IF NOT EXISTS account_terms_immutable_update BEFORE UPDATE ON account_referral_terms BEGIN SELECT RAISE(ABORT,'IMMUTABLE_TERMS'); END;
+   CREATE TRIGGER IF NOT EXISTS account_terms_immutable_delete BEFORE DELETE ON account_referral_terms BEGIN SELECT RAISE(ABORT,'IMMUTABLE_TERMS'); END;
+   CREATE TRIGGER IF NOT EXISTS account_entries_immutable_update BEFORE UPDATE ON account_referral_entries BEGIN SELECT RAISE(ABORT,'IMMUTABLE_ENTRIES'); END;
+   CREATE TRIGGER IF NOT EXISTS account_entries_immutable_delete BEFORE DELETE ON account_referral_entries BEGIN SELECT RAISE(ABORT,'IMMUTABLE_ENTRIES'); END;
+   CREATE TRIGGER IF NOT EXISTS account_payouts_immutable_update BEFORE UPDATE ON account_referral_payouts BEGIN SELECT RAISE(ABORT,'IMMUTABLE_PAYOUTS'); END;
+   CREATE TRIGGER IF NOT EXISTS account_payouts_immutable_delete BEFORE DELETE ON account_referral_payouts BEGIN SELECT RAISE(ABORT,'IMMUTABLE_PAYOUTS'); END;
+   CREATE TRIGGER IF NOT EXISTS account_payout_items_immutable_update BEFORE UPDATE ON account_referral_payout_items BEGIN SELECT RAISE(ABORT,'IMMUTABLE_PAYOUTS'); END;
+   CREATE TRIGGER IF NOT EXISTS account_payout_items_immutable_delete BEFORE DELETE ON account_referral_payout_items BEGIN SELECT RAISE(ABORT,'IMMUTABLE_PAYOUTS'); END;
+   CREATE TRIGGER IF NOT EXISTS account_states_immutable_update BEFORE UPDATE ON account_referral_entry_states BEGIN SELECT RAISE(ABORT,'IMMUTABLE_STATES'); END;
+   CREATE TRIGGER IF NOT EXISTS account_states_immutable_delete BEFORE DELETE ON account_referral_entry_states BEGIN SELECT RAISE(ABORT,'IMMUTABLE_STATES'); END;
+   CREATE TRIGGER IF NOT EXISTS account_redemptions_immutable_update BEFORE UPDATE ON account_referral_redemptions BEGIN SELECT RAISE(ABORT,'IMMUTABLE_REDEMPTIONS'); END;
+   CREATE TRIGGER IF NOT EXISTS account_redemptions_immutable_delete BEFORE DELETE ON account_referral_redemptions BEGIN SELECT RAISE(ABORT,'IMMUTABLE_REDEMPTIONS'); END;
+   CREATE TRIGGER IF NOT EXISTS account_audit_immutable_update BEFORE UPDATE ON account_referral_audit BEGIN SELECT RAISE(ABORT,'IMMUTABLE_AUDIT'); END;
+   CREATE TRIGGER IF NOT EXISTS account_audit_immutable_delete BEFORE DELETE ON account_referral_audit BEGIN SELECT RAISE(ABORT,'IMMUTABLE_AUDIT'); END;
+   CREATE TRIGGER IF NOT EXISTS account_state_transition BEFORE INSERT ON account_referral_entry_states WHEN coalesce((SELECT phase FROM account_referral_current_entries WHERE id=NEW.entry_id),'missing')<>'pending' OR NEW.phase NOT IN ('earned','voided') BEGIN SELECT RAISE(ABORT,'INVALID_ENTRY_TRANSITION'); END;
+   CREATE TRIGGER IF NOT EXISTS account_payout_allocation BEFORE INSERT ON account_referral_payout_items WHEN NOT EXISTS(SELECT 1 FROM account_referral_current_entries e JOIN account_referral_payouts p ON p.id=NEW.payout_id WHERE e.id=NEW.entry_id AND e.partner_id=p.partner_id AND e.kind='commission' AND e.phase='earned' AND NEW.amount+coalesce((SELECT sum(amount) FROM account_referral_payout_items WHERE entry_id=NEW.entry_id),0)<=e.amount) BEGIN SELECT RAISE(ABORT,'INVALID_PAYOUT_ALLOCATION'); END;
+   CREATE TRIGGER IF NOT EXISTS account_reward_redemption BEFORE INSERT ON account_referral_redemptions WHEN NOT EXISTS(SELECT 1 FROM account_referral_current_entries e WHERE e.id=NEW.entry_id AND e.kind='reward' AND e.phase='earned' AND NEW.months+coalesce((SELECT sum(months) FROM account_referral_redemptions WHERE entry_id=NEW.entry_id),0)<=e.amount) BEGIN SELECT RAISE(ABORT,'INVALID_REWARD_REDEMPTION'); END;
+  `);
+ }
+ revision(){return this.s.get('SELECT revision FROM account_referral_meta WHERE id=1').revision;}
+ ensure(user){
+  if(!UUID.test(user??''))throw Error('AUTH_REQUIRED');
+  this.s.run("INSERT OR IGNORE INTO account_referral_partners VALUES(?,?,'member',NULL,?)",user,randomUUID().replaceAll('-',''),Date.now());
+  return this.s.get('SELECT * FROM account_referral_partners WHERE user_id=?',user);
+ }
+ terms(partner){
+  const rows=this.s.all("SELECT * FROM account_referral_terms WHERE scope='global' OR partner_id=? ORDER BY version DESC",partner);
+  const chosen=rows.find(r=>r.partner_id===partner)??rows.find(r=>r.scope==='global');
+  return chosen?{version:chosen.version,scope:chosen.scope,state:chosen.state,terms:JSON.parse(chosen.terms)}:null;
+ }
+ totals(partner=null){
+  const where=partner?' WHERE partner_id=?':'',args=partner?[partner]:[];
+  const refs=this.s.get("SELECT count(*) signups,coalesce(sum(state='qualified'),0) qualified,coalesce(sum(state='pending'),0) pending,coalesce(sum(state='rejected'),0) rejected FROM account_referral_signups"+where,...args);
+  const e=this.s.get("SELECT coalesce(sum(CASE WHEN kind='reward' AND phase='pending' THEN amount ELSE 0 END),0) pendingMonths,coalesce(sum(CASE WHEN kind='reward' AND phase='earned' THEN amount ELSE 0 END),0) earnedMonths,coalesce(sum(CASE WHEN currency='cad' AND phase='pending' THEN amount ELSE 0 END),0) pendingCents,coalesce(sum(CASE WHEN currency='cad' AND phase='earned' THEN amount ELSE 0 END),0) earnedCents FROM account_referral_current_entries"+where,...args);
+  const paid=this.s.get('SELECT coalesce(sum(amount),0) paidCents,count(*) payoutCount FROM account_referral_payouts'+where,...args);
+  const redeemed=this.s.get("SELECT coalesce(sum(r.months),0) redeemedMonths FROM account_referral_redemptions r JOIN account_referral_entries e ON e.id=r.entry_id"+(partner?' WHERE e.partner_id=?':''),...args);
+  return {...refs,...e,...paid,...redeemed,owedCents:Math.max(0,e.earnedCents-paid.paidCents),balanceCents:e.earnedCents-paid.paidCents,availableMonths:Math.max(0,e.earnedMonths-redeemed.redeemedMonths),currency:'cad'};
+ }
+ dashboard(user){
+  const p=this.ensure(user),totals=this.totals(user),policy=this.terms(user);
+  const tiers=policy?.terms.tiers??[],nextOrdinal=totals.qualified+1,band=tiers.findIndex(t=>t.through===null||nextOrdinal<=t.through);
+  const nextTier=band>=0&&band<tiers.length-1?tiers[band].through+1:null;
+  return {schemaVersion:1,mode:'preparation',holds:ACCOUNT_HOLDS,revision:this.revision(),account:{id:user,role:p.role,pendingRole:p.pending_role},sharing:{appUrl:'https://app.ezpepplanner.com/',referralUrl:null,state:'held',code:p.code},totals,policy,tierProgress:{basis:'draft_next_qualifying_signup',ordinal:nextOrdinal,tier:band>=0?band+1:null,nextTier,remaining:nextTier===null?null:Math.max(0,nextTier-nextOrdinal)},
+   referrals:this.s.all('SELECT id,state,created_at,qualified_at,term_version FROM account_referral_signups WHERE partner_id=? ORDER BY created_at DESC,id LIMIT 200',user),
+   entries:this.s.all('SELECT id,referral_id,term_version,kind,phase,amount,currency,created_at FROM account_referral_current_entries WHERE partner_id=? ORDER BY created_at DESC,id LIMIT 200',user),
+   payouts:this.s.all('SELECT id,reference,currency,amount,paid_at FROM account_referral_payouts WHERE partner_id=? ORDER BY paid_at DESC,id LIMIT 200',user)};
+ }
+ history(user,{section='referrals',offset=0}={}){
+  if(!UUID.test(user??'')||!['referrals','entries','payouts'].includes(section)||!integer(offset,0,1000000))throw Error('INVALID_ACCOUNT_QUERY');
+  const p=this.ensure(user),definitions={referrals:{table:'account_referral_signups',columns:'id,state,created_at,qualified_at,term_version',order:'created_at DESC,id'},entries:{table:'account_referral_current_entries',columns:'id,referral_id,term_version,kind,phase,amount,currency,created_at',order:'created_at DESC,id'},payouts:{table:'account_referral_payouts',columns:'id,reference,currency,amount,paid_at',order:'paid_at DESC,id'}};
+  const d=definitions[section],total=this.s.get('SELECT count(*) n FROM '+d.table+' WHERE partner_id=?',user).n;
+  const rows=this.s.all('SELECT '+d.columns+' FROM '+d.table+' WHERE partner_id=? ORDER BY '+d.order+' LIMIT 50 OFFSET ?',user,offset);
+  return {schemaVersion:1,mode:'preparation',holds:ACCOUNT_HOLDS,account:{id:user,role:p.role},section,rows,pagination:{offset,total,nextOffset:offset+rows.length<total?offset+rows.length:null}};
+ }
+ ownerView(user,{section='partners',offset=0,query=''}={}){
+  if(!['partners','referrals','entries','payouts','terms','audit'].includes(section)||!integer(offset,0,1000000)||typeof query!=='string'||query.length>80||!/^[a-zA-Z0-9_-]*$/.test(query))throw Error('INVALID_ACCOUNT_QUERY');
+  const definitions={
+   partners:{table:'account_referral_partners',order:'created_at DESC,user_id',columns:'user_id,code,role,pending_role,created_at',search:'code'},
+   referrals:{table:'account_referral_signups',order:'created_at DESC,id',columns:'id,partner_id,state,term_version,created_at,qualified_at',search:'partner_id'},
+   entries:{table:'account_referral_current_entries',order:'created_at DESC,id',columns:'id,partner_id,referral_id,term_version,kind,phase,amount,currency,created_at',search:'partner_id'},
+   payouts:{table:'account_referral_payouts',order:'paid_at DESC,id',columns:'id,partner_id,reference,currency,amount,paid_at',search:'partner_id'},
+   terms:{table:'account_referral_terms',order:'version DESC',columns:'version,scope,partner_id,terms,state,created_at',search:'partner_id'},
+   audit:{table:'account_referral_audit',order:'created_at DESC,id',columns:'id,action,target,revision,reason,created_at',search:'target'}
+  };
+  const d=definitions[section],where=query?' WHERE '+d.search+' LIKE ?':'',args=query?[query+'%']:[];
+  const total=this.s.get('SELECT count(*) n FROM '+d.table+where,...args).n;
+  const rows=this.s.all('SELECT '+d.columns+' FROM '+d.table+where+' ORDER BY '+d.order+' LIMIT 50 OFFSET ?',...args,offset);
+  if(section==='partners')rows.forEach(p=>{p.totals=this.totals(p.user_id);p.policy=this.terms(p.user_id);});
+  if(section==='terms')rows.forEach(r=>{r.terms=JSON.parse(r.terms);});
+  return {schemaVersion:1,mode:'preparation',holds:ACCOUNT_HOLDS,revision:this.revision(),account:{id:user,role:'owner'},totals:this.totals(),partnerCount:this.s.get('SELECT count(*) n FROM account_referral_partners').n,section,rows,pagination:{offset,total,nextOffset:offset+rows.length<total?offset+rows.length:null},policy:this.terms(null)};
+ }
+ draft(user,input){
+  if(!exact(input,['action','expectedRevision','reason','target','terms']))throw Error('INVALID_ACCOUNT_ACTION');
+  if(!integer(input.expectedRevision,1,1000000000)||typeof input.reason!=='string'||!input.reason.trim()||input.reason.length>500)throw Error('AUDIT_REASON_REQUIRED');
+  if(input.action!=='terms'&&input.action!=='promote')throw Error('ACCOUNT_ACTION_DISABLED');
+  if(input.target!==null&&!UUID.test(input.target))throw Error('INVALID_PARTNER');
+  const policy=input.action==='terms'?validateReferralTerms(input.terms):null;
+  if(input.action==='promote'&&(input.target===null||input.terms!==null))throw Error('INVALID_ACCOUNT_ACTION');
+  return this.s.tx(()=>{
+   if(this.revision()!==input.expectedRevision)throw Error('ACCOUNT_REVISION_CONFLICT');
+   if(input.target!==null&&!this.s.get('SELECT user_id FROM account_referral_partners WHERE user_id=?',input.target))throw Error('PARTNER_NOT_FOUND');
+   let version=null;
+   if(input.action==='terms'){
+    version=(this.s.get('SELECT max(version) v FROM account_referral_terms').v??0)+1;
+    this.s.run("INSERT INTO account_referral_terms VALUES(?,?,?,?,'draft',?,?)",version,input.target===null?'global':'partner',input.target,JSON.stringify(policy),user,Date.now());
+   }else{
+    const p=this.s.get('SELECT role,pending_role FROM account_referral_partners WHERE user_id=?',input.target);
+    if(p.role!=='member'||p.pending_role!==null)throw Error('PROMOTION_ALREADY_RECORDED');
+    this.s.run("UPDATE account_referral_partners SET pending_role='influencer' WHERE user_id=?",input.target);
+   }
+   this.s.run('UPDATE account_referral_meta SET revision=revision+1 WHERE id=1');
+   this.s.run('INSERT INTO account_referral_audit VALUES(?,?,?,?,?,?,?)',randomUUID(),user,input.action,input.target,this.revision(),input.reason.trim(),Date.now());
+   return {saved:'draft',version,revision:this.revision(),holds:ACCOUNT_HOLDS,activationChanged:false};
+  });
+ }
+}

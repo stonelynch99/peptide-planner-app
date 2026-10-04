@@ -42,3 +42,178 @@ test('password: rejected recovery response is cleared without a code exchange',a
 
 test('password: same-account verification and save retain the mounted screen',async()=>{const states=[],h=authHarness();const c=new AuthController(h.port,s=>states.push(s));await c.start();await c.passwordSignIn('owner@example.test','abc123');h.port.restore=async()=>({userId:owner,email:'owner@example.test'});states.length=0;assert.equal(await c.verify('owner@example.test','123456'),'');assert(!states.some(s=>s.status==='loading'));assert.match(await c.savePassword('abc123','abc123'),/Password saved/);assert(!states.some(s=>s.status==='loading'));assert.equal(states.at(-1).userId,owner);});
 test('password: failed verification does not report successful setup',async()=>{const h=authHarness();h.port.verifyCode=async()=>{throw Error('invalid')};assert.notEqual(await h.controller.verify('owner@example.test','123456'),'');assert.equal(h.changes(),0);});
+
+// Isolated website accounts; no real identities or network.
+{
+ const {Store,ReferralAccounts,ACCOUNT_HOLDS,validateReferralTerms,referralCommission}=await import('./membership-foundation/backend/store.mjs');
+ const {handler}=await import('./membership-foundation/backend/http.mjs');
+const owner='11111111-1111-4111-8111-111111111111',member='22222222-2222-4222-8222-222222222222',other='33333333-3333-4333-8333-333333333333';
+const terms=()=>({rewardMonths:2,tiers:[{through:250,firstMonthBps:3000},{through:500,firstMonthBps:6000},{through:null,firstMonthBps:8000}],recurringBps:1500,effectiveAt:null,qualification:null,attributionDays:null,holdingDays:null,renewalMonths:null,payoutTerms:null});
+const fixture=()=>{const s=new Store(),a=new ReferralAccounts(s);a.ensure(member);a.ensure(other);return {s,a};};
+const draft=(a,p=terms(),target=null)=>a.draft(owner,{action:'terms',expectedRevision:a.revision(),reason:'Synthetic specification check',target,terms:p});
+function httpFixture({who=member,owners=[owner],enabled=true,beta=true}={}){
+ const {s,a}=fixture();let external=0;
+ const fetcher=async url=>{if(url.endsWith('/auth/v1/user'))return Response.json({id:who});if(url.endsWith('/rpc/beta_access'))return Response.json(beta);external++;throw Error('NO_BILLING_OR_PLANNER_CALL_ALLOWED');};
+ return {s,a,h:handler(s,{publishable:'sb_publishable_synthetic',accountWebsiteEnabled:enabled,accountOwners:owners,testUsers:[member]},fetcher),external:()=>external};
+}
+const request=(path,input={},origin='https://ezpepplanner.com',token='Bearer synthetic')=>new Request('https://builder-pepplan.aurapep.ca'+path,{method:'POST',headers:{origin,authorization:token,'content-type':'application/json'},body:JSON.stringify(input)});
+test('referral accounts: profile is stable, sharing held, and all existing launch switches unchanged',()=>{
+ const {s,a}=fixture(),before=s.settings(),one=a.dashboard(member),two=a.dashboard(member);
+ assert.equal(one.sharing.code,two.sharing.code);assert.equal(one.sharing.referralUrl,null);assert.deepEqual(one.holds,ACCOUNT_HOLDS);assert.equal(one.mode,'preparation');assert.deepEqual(s.settings(),before);assert.equal(s.membership(member).pro,false);
+});
+test('referral accounts: invalid identity does not create a partner',()=>{const {s,a}=fixture();assert.throws(()=>a.ensure('not-an-auth-user'),/AUTH_REQUIRED/);assert.equal(s.get('SELECT count(*) n FROM account_referral_partners').n,2);});
+test('referral accounts: owner draft versions preserve old terms, audit and launch holds',()=>{
+ const {s,a}=fixture();const old=draft(a),next=draft(a,{...terms(),rewardMonths:3});assert.equal(next.revision,3);
+ assert.equal(JSON.parse(s.get('SELECT terms FROM account_referral_terms WHERE version=?',old.version).terms).rewardMonths,2);
+ assert.equal(a.terms(member).terms.rewardMonths,3);assert.equal(s.get('SELECT count(*) n FROM account_referral_audit').n,2);assert.deepEqual(s.settings().referrals_enabled,false);
+ assert.throws(()=>s.run('UPDATE account_referral_terms SET terms=?','{}'),/IMMUTABLE_TERMS/);assert.throws(()=>s.run('DELETE FROM account_referral_terms'),/IMMUTABLE_TERMS/);
+});
+test('referral accounts: stale owner change rolls back without another version or audit',()=>{const {s,a}=fixture();draft(a);assert.throws(()=>a.draft(owner,{action:'terms',expectedRevision:1,reason:'stale',target:null,terms:terms()}),/REVISION_CONFLICT/);assert.equal(s.get('SELECT count(*) n FROM account_referral_terms').n,1);assert.equal(a.revision(),2);});
+test('referral accounts: all tier boundaries and recurring rates use integer cents',()=>{
+ const p=terms();assert.equal(referralCommission(799,1,true,p),239);assert.equal(referralCommission(799,250,true,p),239);assert.equal(referralCommission(799,251,true,p),479);assert.equal(referralCommission(799,500,true,p),479);assert.equal(referralCommission(799,501,true,p),639);assert.equal(referralCommission(799,1,false,p),119);assert.equal(referralCommission(0,1,true,p),0);
+});
+test('referral accounts: unknown qualification, dates and payout terms remain unapproved',()=>{const p=validateReferralTerms(terms());for(const k of ['qualification','effectiveAt','attributionDays','holdingDays','renewalMonths','payoutTerms'])assert.equal(p[k],null);assert.throws(()=>referralCommission(799,1,false,{...p,recurringBps:null}),/TERMS_PENDING/);});
+test('referral accounts: malformed rates, quotas and unknown activation fields rejected',()=>{
+ for(const p of [{...terms(),rewardMonths:0},{...terms(),rewardMonths:4},{...terms(),recurringBps:10001},{...terms(),tiers:[{through:250,firstMonthBps:3000}]},{...terms(),tiers:[{through:null,firstMonthBps:3000},{through:null,firstMonthBps:6000}]},{...terms(),tiers:[{through:10,firstMonthBps:1000},{through:5,firstMonthBps:2000},{through:null,firstMonthBps:3000}]},{...terms(),enabled:true}])assert.throws(()=>validateReferralTerms(p));
+ assert.throws(()=>referralCommission(799.5,1,true,terms()),/INVALID_COMMISSION_INPUT/);
+});
+test('referral accounts: individual terms override global drafts, without changing other partners',()=>{
+ const {a}=fixture();draft(a);draft(a,{...terms(),rewardMonths:3,recurringBps:2500},member);draft(a,{...terms(),recurringBps:500});
+ assert.equal(a.terms(member).terms.recurringBps,2500);assert.equal(a.terms(other).terms.recurringBps,500);
+});
+test('referral accounts: member promotion records a held draft and preserves earnings and identity',()=>{
+ const {s,a}=fixture();draft(a);a.draft(owner,{action:'promote',expectedRevision:a.revision(),reason:'Synthetic partner change',target:member,terms:null});
+ const p=a.dashboard(member);assert.equal(p.account.id,member);assert.equal(p.account.role,'member');assert.equal(p.account.pendingRole,'influencer');assert.equal(p.sharing.referralUrl,null);
+ assert.throws(()=>a.draft(owner,{action:'promote',expectedRevision:a.revision(),reason:'Duplicate change',target:member,terms:null}),/ALREADY_RECORDED/);
+ assert.equal(s.get('SELECT count(*) n FROM account_referral_audit').n,2);
+});
+function seedRecords(s,a){
+ const v=draft(a).version,now=Date.now();
+ s.run('INSERT INTO account_referral_signups VALUES(?,?,?,?,?,?,?)','fixture-ref',member,'44444444-4444-4444-8444-444444444444','qualified',v,now,now);
+ s.run('INSERT INTO account_referral_signups VALUES(?,?,?,?,?,?,?)','other-ref',other,'55555555-5555-4555-8555-555555555555','pending',v,now,null);
+ const add=(id,key,kind,phase,amount,currency)=>s.run('INSERT INTO account_referral_entries VALUES(?,?,?,?,?,?,?,?,?,?)',id,member,'fixture-ref',key,v,kind,phase,amount,currency,now);
+ add('earned','fixture-invoice','commission','earned',1000,'cad');add('pending','fixture-pending','commission','pending',100,'cad');add('refund','fixture-refund','refund_adjustment','earned',-800,'cad');add('reward','fixture-reward','reward','earned',3,null);add('reward-pending','fixture-reward-pending','reward','pending',2,null);
+ s.run('INSERT INTO account_referral_payouts VALUES(?,?,?,?,?,?)','paid',member,'fixture-bank-reference','cad',300,now);
+ s.run('INSERT INTO account_referral_payout_items VALUES(?,?,?)','earned','paid',300);
+ s.run('INSERT INTO account_referral_redemptions VALUES(?,?,?,?,?)','redemption','reward','fixture-entitlement',1,now);
+ return v;
+}
+test('referral accounts: totals keep pending, earned, paid, owed, refund debt and rewards distinct',()=>{
+ const {s,a}=fixture();seedRecords(s,a);const t=a.dashboard(member).totals;
+ assert.equal(t.pendingCents,100);assert.equal(t.earnedCents,200);assert.equal(t.paidCents,300);assert.equal(t.owedCents,0);assert.equal(t.balanceCents,-100);assert.equal(t.earnedMonths,3);assert.equal(t.pendingMonths,2);assert.equal(t.redeemedMonths,1);assert.equal(t.availableMonths,2);
+});
+test('referral accounts: private member view excludes another partner and referred identities',()=>{
+ const {s,a}=fixture();seedRecords(s,a);const one=a.dashboard(member),two=a.dashboard(other);
+ assert.equal(one.referrals.length,1);assert.equal(two.entries.length,0);assert.equal(two.totals.earnedCents,0);
+ assert(!JSON.stringify(one).includes('55555555-5555-4555-8555-555555555555'));assert(!JSON.stringify(one.referrals).includes('referred_user'));
+});
+test('referral accounts: existing accounting history cannot be recalculated or overwritten by terms',()=>{
+ const {s,a}=fixture();seedRecords(s,a);const before=JSON.stringify(s.all('SELECT * FROM account_referral_entries'));draft(a,{...terms(),recurringBps:9000});
+ assert.equal(JSON.stringify(s.all('SELECT * FROM account_referral_entries')),before);
+ assert.throws(()=>s.run('UPDATE account_referral_entries SET amount=9999'),/IMMUTABLE_ENTRIES/);assert.throws(()=>s.run('DELETE FROM account_referral_entries'),/IMMUTABLE_ENTRIES/);assert.throws(()=>s.run('DELETE FROM account_referral_payouts'),/IMMUTABLE_PAYOUTS/);
+});
+test('referral accounts: duplicate sources, self referral and duplicate referred accounts rejected',()=>{
+ const {s,a}=fixture();seedRecords(s,a);const now=Date.now();
+ assert.throws(()=>s.run('INSERT INTO account_referral_signups VALUES(?,?,?,?,?,?,?)','self',member,member,'pending',1,now,null));
+ assert.throws(()=>s.run('INSERT INTO account_referral_signups VALUES(?,?,?,?,?,?,?)','duplicate',other,'44444444-4444-4444-8444-444444444444','pending',1,now,null));
+ assert.throws(()=>s.run('INSERT INTO account_referral_entries SELECT ?,partner_id,referral_id,source_key,term_version,kind,phase,amount,currency,created_at FROM account_referral_entries WHERE id=?','duplicate-entry','earned'));
+});
+test('referral accounts: owner pagination covers all partners with global totals and bounded fields',()=>{
+ const {s,a}=fixture();for(let i=1;i<=103;i++)a.ensure('66666666-6666-4666-8666-'+String(i).padStart(12,'0'));
+ let ids=[],offset=0;do{const v=a.ownerView(owner,{offset});ids.push(...v.rows.map(p=>p.user_id));assert.equal(v.partnerCount,105);offset=v.pagination.nextOffset;}while(offset!==null);
+ assert.equal(new Set(ids).size,105);assert.throws(()=>a.ownerView(owner,{section:'subscriptions'}),/INVALID_ACCOUNT_QUERY/);assert.throws(()=>a.ownerView(owner,{query:"%' OR 1=1--"}),/INVALID_ACCOUNT_QUERY/);
+});
+test('referral accounts: schema extension leaves legacy membership records and switches identical',()=>{
+ const s=new Store(),attempt=s.reserve(member),before=JSON.stringify(s.all('SELECT * FROM attempts')),settings=JSON.stringify(s.settings()),legacyTerms=JSON.stringify(s.all('SELECT * FROM terms'));
+ new ReferralAccounts(s);assert.equal(JSON.stringify(s.all('SELECT * FROM attempts')),before);assert.equal(JSON.stringify(s.settings()),settings);assert.equal(JSON.stringify(s.all('SELECT * FROM terms')),legacyTerms);assert.equal(s.reserve(member).id,attempt.id);
+});
+test('referral accounts: website config is held by default and never exposes service credentials',async()=>{
+ let {h}=httpFixture({enabled:false});assert.deepEqual(await (await h(request('/accounts/config'))).json(),{enabled:false,publicSignup:false});
+ h=handler(new Store(),{accountWebsiteEnabled:true,publishable:'sb_secret_synthetic'});assert.equal((await h(request('/accounts/config'))).status,400);
+ const f=httpFixture();const c=await (await f.h(request('/accounts/config'))).json();assert.equal(c.authentication,'existing_beta');assert.equal(c.publicSignup,false);assert.equal(c.publishable,'sb_publishable_synthetic');
+});
+test('referral accounts: server authentication, beta admission and approved origin remain required',async()=>{
+ let f=httpFixture();assert.equal((await f.h(request('/accounts/dashboard',{},'https://unapproved.invalid'))).status,403);assert.equal((await f.h(request('/accounts/dashboard',{},'https://ezpepplanner.com',''))).status,401);
+ f=httpFixture({beta:false});assert.equal((await f.h(request('/accounts/dashboard'))).status,403);
+ f=httpFixture({enabled:false});assert.equal((await f.h(request('/accounts/dashboard'))).status,503);
+});
+test('referral accounts: TEST billing allowlist and browser role claims cannot grant owner access',async()=>{
+ const f=httpFixture();assert.equal((await f.h(request('/accounts/owner/view'))).status,403);assert.equal((await f.h(request('/accounts/dashboard',{userId:owner,role:'owner'}))).status,400);
+ assert.equal((await (await f.h(request('/accounts/dashboard'))).json()).account.role,'member');assert.equal(f.external(),0);
+});
+test('referral accounts: owner reads and draft changes use current authenticated identity',async()=>{
+ const f=httpFixture({who:owner});const initial=await f.h(request('/accounts/owner/view'));assert.equal(initial.status,200);
+ const body={action:'terms',expectedRevision:1,reason:'Synthetic owner edit',target:null,terms:terms()};const r=await f.h(request('/accounts/owner/draft',body));assert.equal(r.status,200);assert.equal((await r.json()).saved,'draft');
+ assert.equal((await f.h(request('/accounts/owner/draft',body))).status,400);assert.equal(f.external(),0);
+});
+test('referral accounts: signup, qualification, rewards activation and payout writes have no public route',async()=>{
+ const f=httpFixture({who:owner});
+ for(const path of ['/accounts/signup','/accounts/qualify','/accounts/reward','/accounts/payout','/accounts/activate'])assert.equal((await f.h(request(path))).status,404);
+ assert.equal(f.external(),0);assert.equal(f.s.get('SELECT count(*) n FROM account_referral_entries').n,0);assert.equal(f.s.get('SELECT count(*) n FROM account_referral_payouts').n,0);
+});
+test('referral accounts: website origin is allowed only for account routes and receives bounded CORS',async()=>{
+ const f=httpFixture();assert.equal((await f.h(request('/membership/status'))).status,403);
+ const r=await f.h(new Request('https://builder-pepplan.aurapep.ca/accounts/dashboard',{method:'OPTIONS',headers:{origin:'https://ezpepplanner.com'}}));assert.equal(r.status,204);assert.equal(r.headers.get('access-control-allow-origin'),'https://ezpepplanner.com');
+ const v=await f.h(request('/accounts/dashboard'));assert.equal(v.headers.get('cache-control'),'no-store');assert.equal((await v.json()).account.id,member);
+});
+test('referral accounts: maturation moves pending amounts once and preserves the original ledger',()=>{
+ const {s,a}=fixture();seedRecords(s,a);const now=Date.now(),before=s.get('SELECT * FROM account_referral_entries WHERE id=?','pending');
+ s.run('INSERT INTO account_referral_entry_states VALUES(?,?,?,?,?)','mature','pending','fixture-maturity','earned',now);
+ const t=a.dashboard(member).totals;assert.equal(t.pendingCents,0);assert.equal(t.earnedCents,300);assert.deepEqual(s.get('SELECT * FROM account_referral_entries WHERE id=?','pending'),before);
+ assert.throws(()=>s.run('INSERT INTO account_referral_entry_states VALUES(?,?,?,?,?)','again','pending','fixture-maturity-two','earned',now+1),/INVALID_ENTRY_TRANSITION/);
+ assert.throws(()=>s.run('UPDATE account_referral_entry_states SET phase=?','pending'),/IMMUTABLE_STATES/);
+});
+test('referral accounts: partial payout allocations cannot pay the same earning twice or another partner',()=>{
+ const {s,a}=fixture();seedRecords(s,a);const now=Date.now();
+ s.run('INSERT INTO account_referral_payouts VALUES(?,?,?,?,?,?)','paid-two',member,'fixture-bank-two','cad',700,now);
+ s.run('INSERT INTO account_referral_payout_items VALUES(?,?,?)','earned','paid-two',700);
+ s.run('INSERT INTO account_referral_payouts VALUES(?,?,?,?,?,?)','paid-three',other,'fixture-bank-three','cad',1,now);
+ assert.throws(()=>s.run('INSERT INTO account_referral_payout_items VALUES(?,?,?)','earned','paid-three',1),/INVALID_PAYOUT_ALLOCATION/);
+ assert.throws(()=>s.run('INSERT INTO account_referral_payout_items VALUES(?,?,?)','pending','paid-two',1),/INVALID_PAYOUT_ALLOCATION/);
+});
+test('referral accounts: Pro month redemption is limited to earned months and immutable receipts',()=>{
+ const {s,a}=fixture();seedRecords(s,a);const now=Date.now();
+ assert.throws(()=>s.run('INSERT INTO account_referral_redemptions VALUES(?,?,?,?,?)','too-many','reward','fixture-extra',3,now),/INVALID_REWARD_REDEMPTION/);
+ assert.throws(()=>s.run('INSERT INTO account_referral_redemptions VALUES(?,?,?,?,?)','too-soon','reward-pending','fixture-pending-claim',1,now),/INVALID_REWARD_REDEMPTION/);
+ assert.throws(()=>s.run('DELETE FROM account_referral_redemptions'),/IMMUTABLE_REDEMPTIONS/);
+ assert.throws(()=>s.run('DELETE FROM account_referral_audit'),/IMMUTABLE_AUDIT/);
+});
+test('referral accounts: member history paginates all own records without accepting another account ID',async()=>{
+ const {s,a}=fixture(),now=Date.now();for(let i=0;i<71;i++)s.run('INSERT INTO account_referral_signups VALUES(?,?,?,?,?,?,?)','ref-'+i,member,'fixture-referred-'+i,'pending',null,now,null);
+ const first=a.history(member),next=a.history(member,{offset:50});assert.equal(first.rows.length,50);assert.equal(first.pagination.total,71);assert.equal(next.rows.length,21);assert.equal(a.history(other).rows.length,0);
+ const f=httpFixture();assert.equal((await f.h(request('/accounts/history',{section:'entries',userId:owner}))).status,400);
+});
+
+}
+
+// Approved account portal regression checks.
+{
+const {createRequire}=await import('node:module'); const require=createRequire(import.meta.url);
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),{test}=require('node:test');
+class Element{
+ constructor(tag='div'){this.tagName=tag;this.children=[];this.hidden=false;this.attrs={};this.listeners={};this.value='';this._text='';this.className='';this.classList={add:name=>this.className+=' '+name};}
+ set textContent(v){this._text=String(v);this.children=[];}get textContent(){return this._text+this.children.map(c=>c.textContent).join(' ');}
+ append(...children){this.children.push(...children);for(const c of children)c.parent=this;}replaceChildren(...children){this._text='';this.children=[];this.append(...children);}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,fn){this.listeners[k]=fn;}remove(){this.parent.children=this.parent.children.filter(x=>x!==this);}
+ querySelector(selector){return this.walk().find(e=>selector==='[type="submit"]'?e.type==='submit':false);}
+ walk(){return this.children.flatMap(x=>[x,...x.walk()]);}
+}
+const id='11111111-1111-4111-8111-111111111111';
+function setup(){
+ const elements=new Map();const get=k=>{if(!elements.has(k))elements.set(k,new Element());return elements.get(k)};
+ const source=fs.readFileSync(new URL('./app/public/website-preview/index.html', import.meta.url),'utf8').match(/\/\/ EZPEP_ACCOUNT_CLIENT_START[\s\S]*?\/\/ EZPEP_ACCOUNT_CLIENT_END/)[0].replace('// No URL token injection, planner storage access or public sign-up.',`globalThis.harness={renderDashboard,selectSection,editTerms,reset,setSession:s=>session=s,setDirty:v=>draftDirty=v,setRevision:v=>ownerRevision=v,history,holdView};`);
+ const requests=[];
+ const ctx={document:{getElementById:get,createElement:tag=>new Element(tag)},window:{addEventListener(){}},navigator:{clipboard:{writeText:async()=>{}}},AbortController,setTimeout,clearTimeout,Intl,Number,Math,Date,Set,WeakMap,fetch:async(url,options)=>{requests.push({url,options});let section=JSON.parse(options.body).section;return {ok:true,json:async()=>({...view('owner'),section,revision:1,rows:[],partnerCount:0,pagination:{total:0,offset:0,nextOffset:null}})}}};
+ vm.runInNewContext(source,ctx);ctx.harness.setSession({userId:id,accessToken:'synthetic',expiresAt:Date.now()+3600000});return {...ctx,elements,get,requests};
+}
+function view(role='member') {return {schemaVersion:1,mode:'preparation',account:{id,role,pendingRole:null},holds:{liveBilling:false,payouts:false,promotions:false,publicSignup:false,referrals:false},totals:{signups:0,qualified:0,pending:0,pendingMonths:0,earnedMonths:0,redeemedMonths:0,availableMonths:0,pendingCents:0,earnedCents:0,paidCents:0,owedCents:0,balanceCents:0},policy:null,tierProgress:{tier:null},sharing:{referralUrl:null}};}
+const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('member shell has real zero balances, held sharing and no owner navigation',async()=>{const c=setup();c.harness.renderDashboard(view());await tick();const root=c.get('account-dashboard');assert.match(root.textContent,/Available Pro months 0/);assert.match(root.textContent,/remains inactive/);assert.doesNotMatch(root.textContent,/Program settings|Alex|Sample|427\.30/);assert.equal(root.walk().filter(e=>e.attrs['aria-current']==='page').length,1);});
+test('influencer separates pending, earned, paid and owed without inventing tiers',async()=>{const c=setup();const v=view('influencer');Object.assign(v.totals,{pendingCents:100,earnedCents:350,paidCents:200,owedCents:150});c.harness.renderDashboard(v);await tick();assert.match(c.get('account-dashboard').textContent,/Pending commissions \$1\.00/);assert.match(c.get('account-dashboard').textContent,/Commissions owed \$1\.50/);assert.match(c.get('account-dashboard').textContent,/Tier quotas have not been set/);});
+test('owner settings use authenticated owner route and versioned editor with no default rates',async()=>{const c=setup();c.harness.renderDashboard(view('owner'));await tick();c.harness.selectSection('settings');await tick();assert.match(c.get('account-owner').textContent,/terms have not been set/);assert.match(c.requests.at(-1).url,/owner\/view$/);c.harness.editTerms(null,null);const inputs=c.get('account-editor').walk().filter(e=>e.tagName==='input');assert.ok(inputs.every(e=>e.value===''));assert.match(c.get('account-editor').textContent,/Reason for this draft change/);});
+test('unsaved owner terms survive navigation, refresh and signout attempts',async()=>{const c=setup();c.harness.renderDashboard(view('owner'));await tick();c.harness.editTerms(null,null);c.harness.setDirty(true);const before=c.get('account-editor').children[0];c.harness.selectSection('payouts');assert.equal(c.get('account-editor').children[0],before);c.harness.renderDashboard(view('owner'));assert.equal(c.get('account-editor').children[0],before);assert.match(c.get('account-message').textContent,/unsaved owner draft/);});
+test('member role refresh removes prior owner table and navigation',async()=>{const c=setup();c.harness.renderDashboard(view('owner'));await tick();c.harness.renderDashboard(view());await tick();assert.equal(c.get('account-owner').hidden,true);assert.doesNotMatch(c.get('account-dashboard').textContent,/Program settings|Edit global/);});
+test('identity and activation mismatch fail closed before rendering',()=>{const c=setup();let v=view();v.holds.payouts=true;assert.throws(()=>c.harness.renderDashboard(v),/INVALID_ACCOUNT_RESPONSE/);v=view();v.account.id='another';assert.throws(()=>c.harness.renderDashboard(v),/INVALID_ACCOUNT_RESPONSE/);assert.equal(c.get('account-dashboard').children.length,0);});
+
+test('role revocation hides owner controls while retaining an unsaved draft',async()=>{const c=setup();c.harness.renderDashboard(view('owner'));await tick();c.harness.editTerms(null,null);c.harness.setDirty(true);const form=c.get('account-editor').children[0];c.harness.renderDashboard(view());assert.equal(c.get('account-owner').hidden,true);assert.equal(c.get('account-editor').hidden,true);assert.equal(c.get('account-editor').children[0],form);});
+
+}
