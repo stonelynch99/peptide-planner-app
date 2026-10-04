@@ -1,3 +1,17 @@
+# App tool-discovery milestone — October 4, 2026
+Owner: Stone Lynch. Final validation/release receipts are recorded in protected REVIEW/HANDOFF.
+
+## Implemented in isolated source; validation pending at preparation
+- [x] More has an 80-character tool/settings/help search with literal case-insensitive word matching, result count, no-match guidance and a clear action.
+- [x] Default More groups remain compact; nested Backup & data, App updates, Quick Start, About, Courses and Library shortcuts appear only in search results.
+- [x] Shortcuts select the exact Settings subsection or Learn tab. No planner saves, restores, syncs, account calls or updates occur from searching.
+- [x] More → Settings and header Settings always open the Settings home, instead of retaining the last subsection.
+- [x] Owner-only beta dashboard remains excluded from nonowner search results. Existing account/referral/feedback routes remain.
+- [ ] Six added actual-source TSX routing checks plus full regression suite and hosted build results must pass and be recorded before release acceptance.
+- [ ] New search and Settings reset are NOT live until guarded publication repair.
+- [x] Prior owner-detail source tested392/392; account-service manifest3d3ea7df55185a119ff51b24e4dd57b6a6f5a80e81f165bc78f786f5804c6037 installed and independently verified; new website detail UI still unpublished.
+No customer-data change, Free/Pro enforcement, beta-access change or signup/billing/referral/promotion/payout activation.
+
 # Owner referral-detail milestone — October 4, 2026
 Owner: Stone Lynch. Latest status and deployment receipts are in protected REVIEW/HANDOFF.
 

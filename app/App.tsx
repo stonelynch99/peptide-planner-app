@@ -155,6 +155,8 @@ export default function App() {
   const [query,setQuery] = useState("");
   const [schoolQuery,setSchoolQuery] = useState("");
   const [settingsSection,setSettingsSection]=useState<'home'|'data'|'updates'|'onboarding'|'about'>('home');
+  const [moreQuery,setMoreQuery]=useState('');
+  const openSettings=(section:typeof settingsSection='home')=>{setSettingsSection(section);setScreen('settings');};
   const [schoolSection,setSchoolSection] = useState<"library"|"courses"|"facts"|"community">("library");
   const [courseWrites,setCourseWrites]=useState(0);
   const [schoolFilter,setSchoolFilter] = useState<"all"|"favorites"|"human"|"preclinical"|"blends">("all");
@@ -648,15 +650,28 @@ export default function App() {
   </ScrollView>;
 
   const renderMore = () => {
-    const groups:{title:string;rows:{label:string;detail:string;target:Screen}[]}[]=[
+    const groups:{title:string;rows:{label:string;detail:string;target:Screen;section?:typeof settingsSection;school?:typeof schoolSection}[]}[]=[
       {title:'YOUR PLANNER',rows:[{label:'History',detail:'Completed and skipped events',target:'history'},{label:'Inventory',detail:'Individual vials across active plans',target:'inventory'},{label:'Notifications',detail:'Reminder timing and device permissions',target:'reminders'}]},
       {title:'YOUR ACCOUNT',rows:[{label:'Your account & cloud',detail:'Sign-in, cloud saving and device transfer',target:'profile'},{label:'Referrals & rewards',detail:'Share EZPep and open your website account',target:'referrals'},{label:'Settings',detail:'Data, updates, Quick Start and app information',target:'settings'}]},
       {title:'HELP & FEEDBACK',rows:[{label:'Beta Feedback',detail:'Report a problem or suggestion privately',target:'betaFeedback'},{label:'Beta privacy & consent',detail:'Review participation and data handling',target:'betaPrivacy'},{label:'Add EZPep to Home Screen',detail:'Installation steps for your phone',target:'homeScreen'}]}
     ];
     if(betaAdmin)groups.push({title:'OWNER',rows:[{label:'Beta Dashboard',detail:'Tester access and aggregate beta usage',target:'betaDashboard'}]});
+    const words=moreQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const searchable:typeof groups=words.length?[...groups,{title:'SHORTCUTS',rows:[
+      {label:'Backup & data',detail:'Settings · Import, export and restore your planner',target:'settings' as Screen,section:'data' as const},
+      {label:'App updates',detail:'Settings · Check for updates safely',target:'settings' as Screen,section:'updates' as const},
+      {label:'Quick Start',detail:'Settings · Revisit the welcome guide',target:'settings' as Screen,section:'onboarding' as const},
+      {label:'About EZPep',detail:'Settings · App information and planning controls',target:'settings' as Screen,section:'about' as const},
+      {label:'Courses',detail:'Learn · Introductory lessons and reading progress',target:'school' as Screen,school:'courses' as const},
+      {label:'Peptide library',detail:'Learn · Evidence, profiles and research sources',target:'school' as Screen,school:'library' as const}
+    ]}]:groups;
+    const visibleGroups=searchable.map(group=>({...group,rows:group.rows.filter(row=>words.every(word=>(row.label+' '+row.detail).toLowerCase().includes(word)))})).filter(group=>group.rows.length);
+    const resultCount=visibleGroups.reduce((n,group)=>n+group.rows.length,0);
     return <ScrollView contentContainerStyle={styles.scrollContent}>
       <Text style={[styles.kicker,{marginTop:20}]}>MORE</Text><Text style={styles.detailTitle}>Your EZPep Planner</Text><Text style={styles.detailMeta}>Everyday tools, your account and help.</Text>
-      {groups.map(group=><View key={group.title}><Text style={[styles.kicker,{marginTop:24,marginBottom:8}]}>{group.title}</Text>{group.rows.map(row=><Pressable accessibilityRole="button" accessibilityLabel={row.label} key={row.label} style={styles.moreRow} onPress={()=>row.target==='betaFeedback'?openBetaFeedback('More'):setScreen(row.target)}><View style={{flex:1}}><Text style={styles.planOptionTitle}>{row.label}</Text><Text style={styles.smallBadge}>{row.detail}</Text></View><Text style={styles.linkArrow}>›</Text></Pressable>)}</View>)}
+      <View style={styles.searchWrap}><Text style={styles.searchIcon}>⌕</Text><TextInput value={moreQuery} onChangeText={setMoreQuery} accessibilityLabel="Find a tool in More" maxLength={80} placeholder="Search tools, settings or help" placeholderTextColor="#91A0BC" style={styles.searchInput}/></View>
+      {!!words.length&&<View><Text accessibilityLiveRegion="polite" style={styles.smallBadge}>{resultCount?resultCount+' matching '+(resultCount===1?'option':'options'):'No matching option. Try “backup”, “updates”, “courses” or “referrals”.'}</Text><Pressable accessibilityRole="button" accessibilityLabel="Clear More search" style={{minHeight:44,justifyContent:'center'}} onPress={()=>setMoreQuery('')}><Text style={styles.back}>Clear search</Text></Pressable></View>}
+      {visibleGroups.map(group=><View key={group.title}><Text style={[styles.kicker,{marginTop:24,marginBottom:8}]}>{group.title}</Text>{group.rows.map(row=><Pressable accessibilityRole="button" accessibilityLabel={row.label} key={row.label} style={styles.moreRow} onPress={()=>{if(row.target==='betaFeedback'){openBetaFeedback('More');return;}if(row.target==='settings'){openSettings(row.section);return;}if(row.school)setSchoolSection(row.school);setScreen(row.target);}}><View style={{flex:1}}><Text style={styles.planOptionTitle}>{row.label}</Text><Text style={styles.smallBadge}>{row.detail}</Text></View><Text style={styles.linkArrow}>›</Text></Pressable>)}</View>)}
       <Text style={[styles.smallBadge,{marginTop:20}]}>Your plans save on this device first. Review cloud status before transferring to another device.</Text>
     </ScrollView>;
   };
@@ -829,7 +844,7 @@ export default function App() {
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
       <View style={styles.topLine}>
         <View style={styles.brandLockup}><Image accessibilityLabel="EZPep Planner" source={{uri:EZPEP_LOCKUP_DATA_URI}} resizeMode="contain" style={styles.brandLockupImage}/></View>
-        <View style={{flexDirection:"row",alignItems:"center",gap:4}}><Pressable accessibilityRole="button" accessibilityLabel="Profile" onPress={()=>setScreen("profile")} style={{width:36,minHeight:44,alignItems:"center",justifyContent:"center"}}><Svg width={20} height={22} viewBox="0 0 24 24"><Circle cx={12} cy={7} r={4} fill="none" stroke={COLORS.ink} strokeWidth={1.7}/><Path d="M 4 22 L 4 19 C 4 12 20 12 20 19 L 20 22 Z" fill="none" stroke={COLORS.ink} strokeWidth={1.7}/></Svg></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Settings" onPress={()=>setScreen("settings")} style={{width:36,minHeight:44,alignItems:"center",justifyContent:"center"}}><Text style={{fontSize:20,color:COLORS.ink}}>⚙</Text></Pressable></View>
+        <View style={{flexDirection:"row",alignItems:"center",gap:4}}><Pressable accessibilityRole="button" accessibilityLabel="Profile" onPress={()=>setScreen("profile")} style={{width:36,minHeight:44,alignItems:"center",justifyContent:"center"}}><Svg width={20} height={22} viewBox="0 0 24 24"><Circle cx={12} cy={7} r={4} fill="none" stroke={COLORS.ink} strokeWidth={1.7}/><Path d="M 4 22 L 4 19 C 4 12 20 12 20 19 L 20 22 Z" fill="none" stroke={COLORS.ink} strokeWidth={1.7}/></Svg></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Settings" onPress={()=>openSettings()} style={{width:36,minHeight:44,alignItems:"center",justifyContent:"center"}}><Text style={{fontSize:20,color:COLORS.ink}}>⚙</Text></Pressable></View>
       </View>
       {(!!saved.error||!!reminderError)&&<View style={styles.saveSyncRow}>{!!saved.error&&<Text testID="save-status" style={styles.smallBadge}>{saved.error}</Text>}{!!saved.error&&!saved.loadFailed&&<AppButton label="Retry save" onPress={()=>saved.retry().catch(()=>{})} secondary/>}{!!reminderError&&<Text style={styles.smallBadge}>{reminderError}</Text>}</View>}
       {!!editError&&<Text style={styles.helper}>{editError}</Text>}

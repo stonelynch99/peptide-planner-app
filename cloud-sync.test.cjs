@@ -145,19 +145,21 @@ test('app account bridge fixes destinations without transporting account credent
 
 {
  const vm=require('node:vm'),ts=require('./app/node_modules/typescript');
- function menuFixture(status='eligible',owner=false){
-  const source=fs.readFileSync('app/App.tsx','utf8'),screens=[],sections=[];
+ function menuFixture(status='eligible',owner=false,query=''){
+  const source=fs.readFileSync('app/App.tsx','utf8'),screens=[],sections=[],queries=[],schoolSections=[];
   const start=source.indexOf('  const renderMore = () => {'),end=source.indexOf('  const renderGuide = () => (',start);
   assert(start>=0&&end>start);
   const navStart=source.indexOf('function BottomNav('),navEnd=source.indexOf('export default function App()',navStart);
   const homeStart=source.indexOf("{settingsSection==='home'&&<>")+"{settingsSection==='home'&&<>".length,homeEnd=source.indexOf('</>}',homeStart);
-  const code=source.slice(navStart,navEnd)+source.slice(start,end)+'\nconst renderSettingsHome=()=> (<>'+source.slice(homeStart,homeEnd)+'</>);\nmodule.exports={renderMore,renderReferrals,renderSettingsHome,BottomNav};';
+  const settingsEntry=source.match(/  const openSettings=[^\n]+/)[0],headerStart=source.indexOf('<Pressable accessibilityRole="button" accessibilityLabel="Settings"');
+  const header=source.slice(headerStart,source.indexOf('</Pressable>',headerStart)+'</Pressable>'.length);
+  const code=settingsEntry+'\nconst renderHeaderSettings=()=> ('+header+');\n'+source.slice(navStart,navEnd)+source.slice(start,end)+'\nconst renderSettingsHome=()=> (<>'+source.slice(homeStart,homeEnd)+'</>);\nmodule.exports={renderMore,renderReferrals,renderSettingsHome,renderHeaderSettings,BottomNav};';
   const react={createElement:(type,props,...children)=>({type,props:props||{},children}),Fragment:'Fragment'};
-  const sandbox={module:{exports:{}},React:react,ScrollView:'ScrollView',Pressable:'Pressable',Text:'Text',View:'View',Card:'Card',AppButton:'AppButton',NavIcon:'NavIcon',ReferralsRewardsPanel:'ReferralsRewardsPanel',styles:{},u:{},navColors:{},betaAdmin:owner,betaAccount:{state:{status,userId:'synthetic-account'}},setScreen:s=>screens.push(s),setSettingsSection:s=>sections.push(s),openBetaFeedback:origin=>screens.push('feedback:'+origin)};
+  const sandbox={module:{exports:{}},React:react,moreQuery:query,TextInput:'TextInput',COLORS:{},setMoreQuery:q=>{queries.push(q);sandbox.moreQuery=q;},setSchoolSection:s=>schoolSections.push(s),ScrollView:'ScrollView',Pressable:'Pressable',Text:'Text',View:'View',Card:'Card',AppButton:'AppButton',NavIcon:'NavIcon',ReferralsRewardsPanel:'ReferralsRewardsPanel',styles:{},u:{},navColors:{},betaAdmin:owner,betaAccount:{state:{status,userId:'synthetic-account'}},setScreen:s=>screens.push(s),setSettingsSection:s=>sections.push(s),openBetaFeedback:origin=>screens.push('feedback:'+origin)};
   vm.runInNewContext(ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText,sandbox);
   const walk=tree=>tree&&typeof tree==='object'?[tree,...(tree.children||[]).flat(Infinity).flatMap(walk)]:[];
   const find=(tree,label)=>walk(tree).find(x=>x.props.accessibilityLabel===label||x.props.label===label);
-  return {...sandbox.module.exports,screens,sections,walk,find};
+  return {...sandbox.module.exports,screens,sections,queries,schoolSections,walk,find};
  }
  test('More routes referrals to a dedicated screen without embedding account records',()=>{
   const f=menuFixture(),tree=f.renderMore();assert.equal(f.walk(tree).filter(x=>x.type==='ReferralsRewardsPanel').length,0);
@@ -185,6 +187,39 @@ test('app account bridge fixes destinations without transporting account credent
   assert.equal(menuFixture('eligible',false).find(menuFixture('eligible',false).renderMore(),'Beta Dashboard'),undefined);
   const f=menuFixture('eligible',true);f.find(f.renderMore(),'Beta Dashboard').props.onPress();assert.deepEqual(f.screens,['betaDashboard']);
  });
+
+ test('More search: default menu stays compact and clear restores it without opening a screen',()=>{
+  const f=menuFixture(),tree=f.renderMore(),rows=f.walk(tree).filter(x=>x.props.accessibilityLabel&&x.type==='Pressable');
+  assert.equal(rows.length,9);assert.equal(f.find(tree,'Backup & data'),undefined);assert.equal(f.find(tree,'Find a tool in More').props.maxLength,80);
+  const searched=menuFixture('eligible',false,'missing tool');const result=searched.renderMore();assert.equal(searched.walk(result).filter(x=>x.type==='Pressable'&&x.props.accessibilityLabel!=='Clear More search').length,0);
+  searched.find(result,'Clear More search').props.onPress();assert.deepEqual(searched.queries,['']);assert.equal(searched.walk(searched.renderMore()).filter(x=>x.type==='Pressable').length,9);assert.deepEqual(searched.screens,[]);
+ });
+ test('More search: case and multiple words find the existing account route',()=>{
+  const f=menuFixture('eligible',false,' CLOUD DEVICE '),tree=f.renderMore();
+  const rows=f.walk(tree).filter(x=>x.type==='Pressable'&&x.props.accessibilityLabel!=='Clear More search');assert.equal(rows.length,1);
+  f.find(tree,'Your account & cloud').props.onPress();assert.deepEqual(f.screens,['profile']);assert.deepEqual(f.sections,[]);
+ });
+ test('More search: backup and update shortcuts open the intended Settings subsection',()=>{
+  for(const [query,label,section] of [['backup','Backup & data','data'],['updates','App updates','updates'],['quick start','Quick Start','onboarding'],['about','About EZPep','about']]){
+   const f=menuFixture('eligible',false,query),tree=f.renderMore();f.find(tree,label).props.onPress();assert.deepEqual(f.sections,[section]);assert.deepEqual(f.screens,['settings']);
+  }
+ });
+ test('More search: learning shortcuts select the intended Learn tab without saving a plan',()=>{
+  for(const [query,label,section] of [['courses','Courses','courses'],['library','Peptide library','library']]){
+   const f=menuFixture('eligible',false,query),tree=f.renderMore();f.find(tree,label).props.onPress();assert.deepEqual(f.schoolSections,[section]);assert.deepEqual(f.screens,['school']);assert.deepEqual(f.sections,[]);
+  }
+ });
+ test('More search: owner tools remain absent for regular accounts even when searched',()=>{
+  for(const state of ['eligible','signedOut','loading','error','denied']){
+   const f=menuFixture(state,false,'beta dashboard');assert.equal(f.find(f.renderMore(),'Beta Dashboard'),undefined);
+  }
+  const f=menuFixture('eligible',true,'beta dashboard');f.find(f.renderMore(),'Beta Dashboard').props.onPress();assert.deepEqual(f.screens,['betaDashboard']);
+ });
+ test('Settings entry: both More and header open the main settings page rather than the last subsection',()=>{
+  const f=menuFixture();f.find(f.renderMore(),'Settings').props.onPress();f.find(f.renderHeaderSettings(),'Settings').props.onPress();
+  assert.deepEqual(f.sections,['home','home']);assert.deepEqual(f.screens,['settings','settings']);
+ });
+
  test('dedicated referral screen retains More as selected bottom navigation',()=>{
   const f=menuFixture(),tree=f.BottomNav({active:'referrals',setScreen:s=>f.screens.push(s)}),tabs=f.walk(tree).filter(x=>x.props.accessibilityRole==='tab');
   assert.deepEqual(tabs.filter(x=>x.props.accessibilityState.selected).map(x=>x.props.accessibilityLabel),['More']);
