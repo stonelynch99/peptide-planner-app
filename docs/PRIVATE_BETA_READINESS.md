@@ -1,3 +1,39 @@
+# Current launch checkpoint — October 4, 2026, 13:00 Vancouver
+Owner: Stone Lynch. Cloud-first development; local work is infrastructure repair only.
+
+## Evidence-backed status
+| Area | Specified | Implemented and tested | Live / remaining |
+|---|---|---|---|
+| Introductory Courses | Three paths, 15 readings, device-only account-scoped progress | Durable completion, resume, load/save recovery, identity isolation; 13 focused checks | App serves c9b363b660671c38ee3269fa77a89b470497cd38. Learn → Courses. Full deployment receipt/17-file reconciliation still pending |
+| Account launch defaults | Two Pro months per confirmed paid member referral; influencer 80% first month / 15% recurring | Versioned draft initializer and protected owner edits; 12 fresh account checks | Account backend installed a8611f453d38abade8d06b085bba2d28a1caf26ca011a40cc94564b07a0fefe7, revision 2. Activation holds remain |
+| Website navigation and benefits | Separate Account / Open Planner; light EZPep branding | Five reviewed files landed/pushed; fresh TypeScript, Expo and 412/1366 previews; 367 regression checks | App-hosted portal is on current commit. Main marketing homepage has NOT been published |
+| Provider disclosure | Preserve public providers without exposing private code | Existing account-section disclosure and exact public privacy link; projection passes unchanged filters | No new privacy source path needed. Full launch privacy policy still pending |
+| Free / Pro | Free one active plan and introductory Learn; Pro multiple plans/full Learn; beta unchanged | Central policy v3; 23 policy-matrix cases and 12 entitlement checks are isolated synthetic only | App enforcement false; installed runtime still older policy. Existing beta access preserved |
+| Billing | CAD7.99/month plus applicable taxes; draft CAD4.99 for three months | Read-only TEST price verification succeeded against dedicated product | Required CAD799 and CAD499 TEST prices are missing. No sync, price creation, checkout, transaction or activation |
+| Owner reporting | Membership directory, revenue and consented aggregate usage | Layout only; no invented financial/user totals | Authoritative reporting feeds remain unconnected |
+
+## Next milestones and acceptance
+1. Repair existing deployment receipt reconciliation before another app publication. Identify exact existing GitHub run and verify all 17 live files, commit and artifact; bind existing evidence without replay. Investigate source-only workflow pause/restoration overlap. Never fabricate receipts.
+2. Publish the main homepage only after current reviewed/pushed copy and projection validation, accurate course copy, live provider-disclosure anchor and rollback readiness. Static marketing must exclude account scripts/forms/private administration.
+3. Reconcile central and installed membership policy, and dedicated TEST price mapping. Preserve the historical CAD899 price/subscription records. Do not activate live billing. Price objects need an approved bounded creation path if absent; existing sync operation is read-only with respect to Stripe.
+4. Integrate verified authenticated entitlements around NEW activation, import, restore, resume and cloud writes. Do not overwrite the owner's three pending files. Preserve readable existing data, history, export, help and recovery through downgrade/offline/errors. Never infer tier from a URL.
+5. Complete synthetic share → attributed signup → verified paid account → exactly-once two-month credit, and influencer commissions separately. Reward/refund/attribution rules and payouts remain held.
+6. Connect owner member/revenue/usage feeds only through bounded authenticated controls and consented analytics; no sensitive planner payloads.
+
+## Live access
+- Planner: https://app.ezpepplanner.com/ → Learn → Courses.
+- Account: https://app.ezpepplanner.com/website-preview/#account
+- Provider disclosure: https://app.ezpepplanner.com/website-preview/#account-provider-disclosure
+- Main homepage: https://ezpepplanner.com/ (previous marketing version).
+
+## Preservation and unresolved decisions
+Pending diff d77baef87fee915c2a433727434901a82c589c96c4867bbd054bc3f76b37d3e8 and all three owner files remain unchanged. No data clearing, reinstall, forced checkout or beta revocation. Signup, live billing, referral activation, promotions and payouts remain disabled.
+Owner decisions still pending: complimentary beta duration; referral attribution/hold/refund/payout terms; optional launch promotion eligibility/cap/deadline. Free introductory learning and Anna's starting rates are already confirmed—older status messages suggesting otherwise are stale.
+
+This checkpoint supersedes the status portions below; earlier audit evidence and original checklist remain preserved.
+
+---
+
 # EZPep Planner: Launch Readiness Checklist
 October 4, 2026 · Owner: Stone Lynch · Target: readiness during October 5–11.
 Baseline live/source commit: 01a6b1fec36105fbdfdc08a83de7f2ab7ded3b7d.
