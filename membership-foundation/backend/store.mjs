@@ -145,6 +145,9 @@ export class ReferralProposalJournal {
  constructor(store){
   this.s=store;
   store.db.exec(`
+   CREATE TABLE IF NOT EXISTS account_referral_captures(referred_user TEXT PRIMARY KEY,partner_id TEXT NOT NULL REFERENCES account_referral_partners(user_id),term_version INTEGER NOT NULL REFERENCES account_referral_terms(version),binding TEXT NOT NULL);
+   CREATE TRIGGER IF NOT EXISTS account_captures_no_update BEFORE UPDATE ON account_referral_captures BEGIN SELECT RAISE(ABORT,'IMMUTABLE_CAPTURE'); END;
+   CREATE TRIGGER IF NOT EXISTS account_captures_no_delete BEFORE DELETE ON account_referral_captures BEGIN SELECT RAISE(ABORT,'IMMUTABLE_CAPTURE'); END;
    CREATE TABLE IF NOT EXISTS account_referral_proposals(referred_user TEXT PRIMARY KEY,partner_id TEXT NOT NULL REFERENCES account_referral_partners(user_id),term_version INTEGER NOT NULL REFERENCES account_referral_terms(version),invoice_id TEXT,proposal TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS account_referral_proposal_receipts(event_id TEXT PRIMARY KEY,evidence TEXT NOT NULL,result TEXT NOT NULL);
    CREATE TRIGGER IF NOT EXISTS account_proposals_no_update BEFORE UPDATE ON account_referral_proposals BEGIN SELECT RAISE(ABORT,'IMMUTABLE_PROPOSAL'); END;
@@ -153,6 +156,25 @@ export class ReferralProposalJournal {
    CREATE TRIGGER IF NOT EXISTS account_proposal_receipts_no_delete BEFORE DELETE ON account_referral_proposal_receipts BEGIN SELECT RAISE(ABORT,'IMMUTABLE_PROPOSAL_RECEIPT'); END;
   `);
  }
+
+ binding(evidence){return JSON.stringify([evidence.partnerId,evidence.referredUser,evidence.referralCode,evidence.expectedCode,evidence.clickedAt,evidence.signedUpAt]);}
+ capture(evidence){
+  if(evidence?.invoice!==null)throw Error('CAPTURE_BEFORE_PAYMENT_REQUIRED');
+  planReferralQualification(evidence,null);
+  return this.s.tx(()=>{
+   const binding=this.binding(evidence),old=this.s.get('SELECT * FROM account_referral_captures WHERE referred_user=?',evidence.referredUser);
+   if(old){if(old.binding!==binding)throw Error('CAPTURE_CONFLICT');return {captured:true,replayed:true,termVersion:old.term_version,activationAllowed:false,creditsApplied:false};}
+   const partner=this.s.get('SELECT * FROM account_referral_partners WHERE user_id=?',evidence.partnerId);
+   if(!partner||partner.code!==evidence.expectedCode)throw Error('PROPOSAL_PARTNER_MISMATCH');
+   const rows=this.s.all("SELECT * FROM account_referral_terms WHERE scope='global' OR partner_id=? ORDER BY version DESC",evidence.partnerId);
+   const row=rows.find(r=>r.partner_id===evidence.partnerId)??rows.find(r=>r.scope==='global');
+   const plan=planReferralQualification(evidence,row?{version:row.version,terms:JSON.parse(row.terms),state:row.state}:null);
+   if(!plan.wouldQualify&&!['first_payment_pending','confirmation_pending'].includes(plan.reason))throw Error('CAPTURE_REJECTED:'+plan.reason);
+   this.s.run('INSERT INTO account_referral_captures VALUES(?,?,?,?)',evidence.referredUser,evidence.partnerId,row.version,binding);
+   return {captured:true,replayed:false,termVersion:row.version,activationAllowed:false,creditsApplied:false};
+  });
+ }
+
  record(eventId,evidence){
   if(typeof eventId!=='string'||!/^proposal_[a-zA-Z0-9_-]{1,100}$/.test(eventId))throw Error('INVALID_PROPOSAL_EVENT');
   // Validate structure even on replay; stable serialization ignores property ordering.
@@ -168,8 +190,11 @@ export class ReferralProposalJournal {
    // A later draft cannot change the terms or attribution of an existing proposal.
    if(existing&&existing.partner_id!==evidence.partnerId)throw Error('PROPOSAL_ATTRIBUTION_CONFLICT');
    const rows=this.s.all("SELECT * FROM account_referral_terms WHERE scope='global' OR partner_id=? ORDER BY version DESC",evidence.partnerId);
-   const selected=existing?rows.find(r=>r.version===existing.term_version):rows.find(r=>r.partner_id===evidence.partnerId)??rows.find(r=>r.scope==='global');
-   if(existing&&!selected)throw Error('PROPOSAL_TERMS_MISSING');
+   const capture=this.s.get('SELECT * FROM account_referral_captures WHERE referred_user=?',evidence.referredUser);
+   if(capture&&capture.binding!==this.binding(evidence))throw Error('CAPTURE_CONFLICT');
+   const lockedVersion=existing?.term_version??capture?.term_version;
+   const selected=lockedVersion?rows.find(r=>r.version===lockedVersion):rows.find(r=>r.partner_id===evidence.partnerId)??rows.find(r=>r.scope==='global');
+   if(lockedVersion&&!selected)throw Error('PROPOSAL_TERMS_MISSING');
    const policy=selected?{version:selected.version,terms:JSON.parse(selected.terms),state:selected.state}:null;
    const plan=planReferralQualification(evidence,policy);
    let result={...plan,proposalRecorded:false};
@@ -177,6 +202,7 @@ export class ReferralProposalJournal {
     if(!plan.wouldQualify||plan.invoiceId!==existing.invoice_id)throw Error('PROPOSAL_EVIDENCE_CONFLICT');
     result={...JSON.parse(existing.proposal),duplicateProposal:true};
    }else if(plan.wouldQualify){
+    if(!capture)throw Error('REFERRAL_CAPTURE_REQUIRED');
     result={...plan,proposalRecorded:true};
     this.s.run('INSERT INTO account_referral_proposals VALUES(?,?,?,?,?)',evidence.referredUser,evidence.partnerId,plan.termVersion,plan.invoiceId,JSON.stringify(result));
    }
