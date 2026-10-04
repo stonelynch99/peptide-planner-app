@@ -38,7 +38,7 @@ export function handler(store,config,fetcher=fetch){const stripe=new StripeTest(
   }
   if(path==='/accounts/owner/view'){
    if(!ownerAllowed(user,config))return reply(403,{error:'OWNER_REQUIRED'});
-   if(Object.keys(input).some(k=>!['section','offset','query'].includes(k)))return reply(400,{error:'INVALID_ACCOUNT_REQUEST'});
+   if(Object.keys(input).some(k=>!['section','offset','query','partnerId'].includes(k)))return reply(400,{error:'INVALID_ACCOUNT_REQUEST'});
    return reply(200,accounts.ownerView(user,input));
   }
   if(path==='/accounts/owner/draft'){

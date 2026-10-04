@@ -1,3 +1,19 @@
+# Owner referral-detail milestone — October 4, 2026
+Owner: Stone Lynch. Latest status and deployment receipts are in protected REVIEW/HANDOFF.
+
+## Implemented in isolated source; validation pending at preparation
+- [x] Owner → Members & partners → View details opens one exact account, with summary, referrals, rewards/commissions, payouts and individual term versions.
+- [x] Pro reward months and CAD commissions use separate labels; selected-account totals do not become program-wide totals.
+- [x] Exact account filtering remains within existing owner-only authenticated/origin-restricted read routes. No new billing, refund, reward or payout write operation.
+- [x] Prefix search treats underscores literally and finds either referral code or account ID on the partner list.
+- [x] Loading/error/retry states hide old rows; stale responses and late errors cannot replace a newer view. Unfinished owner drafts block record navigation.
+- [x] Local actual-source browser/SQLite/HTTP regression checks: 25/25, including eight new owner-detail checks.
+- [ ] Hosted artifact and full regression results must be recorded in REVIEW/HANDOFF before accepting this release.
+- [ ] Visible website publication remains held until deployment receipt/workflow repair. A backend installation alone does not make the new detail UI live.
+- [ ] Owner-wide membership/Free/Pro counts, revenue and app-usage feeds remain unconnected; referral profiles are not total app users.
+- [x] Prior learning-flow milestone tested: 384/384 full suite plus TypeScript/export/mobile and desktop smoke; existing lesson bodies/save protections unchanged. Source commit2f80bb45e8ef645a50cdb67c71016d7abc5723ec; not published.
+All signup/billing/referral activation/promotion/payout holds, customer data and beta access remain preserved.
+
 # Learning-flow milestone — October 4, 2026
 Owner: Stone Lynch. This checkpoint supersedes older course-flow claims below.
 

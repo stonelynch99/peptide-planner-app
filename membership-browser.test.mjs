@@ -253,7 +253,7 @@ function setup(fetcher){
  for(const key of ['account-owner','account-editor','account-message','account-dashboard','account-login','account-email','account-password','account-connect','account-intro']){const e=new Element();e.id=key;elements.set(key,e);body.append(e);}
  const get=k=>elements.get(k);const submit=new Element('button');submit.type='submit';get('account-login').append(submit);
  const document={body,getElementById:k=>body.walk().find(e=>e.id===k)||null,createElement:tag=>new Element(tag)};const location={hash:''},windowListeners={};
- const source=fs.readFileSync(new URL('./app/public/website-preview/index.html', import.meta.url),'utf8').match(/\/\/ EZPEP_ACCOUNT_CLIENT_START[\s\S]*?\/\/ EZPEP_ACCOUNT_CLIENT_END/)[0].replace('// No URL token injection, planner storage access or public sign-up.',`globalThis.harness={renderDashboard,selectSection,editTerms,reset,setSession:s=>session=s,setDirty:v=>draftDirty=v,setRevision:v=>ownerRevision=v,history,holdView,portalRoute,connect};`);
+ const source=fs.readFileSync(new URL('./app/public/website-preview/index.html', import.meta.url),'utf8').match(/\/\/ EZPEP_ACCOUNT_CLIENT_START[\s\S]*?\/\/ EZPEP_ACCOUNT_CLIENT_END/)[0].replace('// No URL token injection, planner storage access or public sign-up.',`globalThis.harness={renderDashboard,selectSection,editTerms,reset,setSession:s=>session=s,setDirty:v=>draftDirty=v,setRevision:v=>ownerRevision=v,history,holdView,portalRoute,connect,loadOwner};`);
  const requests=[];
  const ctx={document,location,window:{addEventListener:(name,fn)=>windowListeners[name]=fn,history:{replaceState:(_,__,hash)=>location.hash=hash}},navigator:{clipboard:{writeText:async()=>{}}},AbortController,setTimeout,clearTimeout,Intl,Number,Math,Date,Set,WeakMap,fetch:async(url,options)=>{requests.push({url,options});if(fetcher)return fetcher(url,options);let section=JSON.parse(options.body).section;return {ok:true,json:async()=>({...view('owner'),section,revision:1,rows:[],partnerCount:0,pagination:{total:0,offset:0,nextOffset:null}})}}};
  vm.runInNewContext(source,ctx);ctx.harness.setSession({userId:id,accessToken:'synthetic',expiresAt:Date.now()+3600000});return {...ctx,elements,get,requests,body,windowListeners};
@@ -336,6 +336,40 @@ test('recent referral completion preserves the all referrals navigation button',
  assert.ok(b);b.listeners.click();await tick();assert.equal(c.location.hash,'#account/referrals');assert.equal(JSON.parse(c.requests.at(-1).options.body).section,'referrals');
 });
 
+
+test('owner detail navigation keeps the selected account and separates months from money',async()=>{
+ const partner='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ const c=setup(async(url,options)=>{const body=JSON.parse(options.body),selected=body.partnerId;return {ok:true,json:async()=>({...view('owner'),section:body.section,revision:1,partnerCount:100,partner:selected?{user_id:partner,code:'synthetic-code',role:'member',pending_role:null}:null,
+ totals:{...view().totals,signups:selected?2:100,availableMonths:2,owedCents:150},
+ rows:body.section==='partners'&&!selected?[{user_id:partner,role:'member',pending_role:null,totals:{signups:2,qualified:1,availableMonths:2,owedCents:150},policy:null}]:[],
+ pagination:{offset:body.offset,total:body.section==='referrals'?61:0,nextOffset:body.section==='referrals'&&body.offset===0?50:null}})};});
+ c.harness.renderDashboard(view('owner'));c.harness.selectSection('partners');await tick();
+ assert.match(c.get('account-owner').textContent,/Available Pro months|Commissions owed \(CAD\)/);
+ const click=text=>{const b=c.get('account-owner').walk().find(e=>e.tagName==='button'&&e.textContent===text);assert.ok(b,text);b.listeners.click();};
+ click('View details');await tick();assert.equal(JSON.parse(c.requests.at(-1).options.body).partnerId,partner);assert.match(c.get('account-owner').textContent,/Member referral details/);assert.match(c.get('account-owner').textContent,/Available Pro months 2/);assert.doesNotMatch(c.get('account-owner').textContent,/Registered referral profiles/);
+ click('Referrals');await tick();click('Next');await tick();let last=JSON.parse(c.requests.at(-1).options.body);assert.equal(last.partnerId,partner);assert.equal(last.offset,50);
+ click('Back to members & partners');await tick();assert.equal(JSON.parse(c.requests.at(-1).options.body).partnerId,undefined);
+});
+test('owner detail navigation preserves an unfinished individual draft',async()=>{
+ const c=setup();c.harness.renderDashboard(view('owner'));await tick();c.harness.editTerms(null,null);c.harness.setDirty(true);
+ const editor=c.get('account-editor').children[0],before=c.requests.length;await c.harness.loadOwner('partners',0,'',false,false,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+ assert.equal(c.requests.length,before);assert.equal(c.get('account-editor').children[0],editor);assert.match(c.get('account-message').textContent,/unfinished owner draft/);
+});
+test('owner details reject mismatched scope and provide a safe retry without old rows',async()=>{
+ const partner='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ const c=setup(async()=>({ok:true,json:async()=>({...view('owner'),section:'partners',revision:1,partner:{user_id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'},rows:[{user_id:'private-other'}]})}));
+ c.harness.renderDashboard(view('owner'));await c.harness.loadOwner('partners',0,'',false,false,partner);
+ assert.match(c.get('account-owner').textContent,/Records could not be loaded/);assert.doesNotMatch(c.get('account-owner').textContent,/private-other/);
+ assert.ok(c.get('account-owner').walk().some(e=>e.textContent==='Retry loading records'));
+});
+test('owner details ignore stale responses and late failures after a newer selection',async()=>{
+ let yes,no;const c=setup((url,options)=>{const body=JSON.parse(options.body);if(body.query==='old')return new Promise((resolve,reject)=>{yes=resolve;no=reject;});return Promise.resolve({ok:true,json:async()=>({...view('owner'),section:body.section,revision:1,rows:[],partnerCount:0,pagination:{offset:0,total:0,nextOffset:null}})});});
+ c.harness.renderDashboard(view('owner'));await tick();
+ let old=c.harness.loadOwner('referrals',0,'old');await tick();await c.harness.loadOwner('payouts',0,'');const before=c.get('account-owner').textContent;
+ yes({ok:true,json:async()=>({...view('owner'),section:'referrals',rows:[{partner_id:'stale-secret'}]})});await old;assert.equal(c.get('account-owner').textContent,before);
+ old=c.harness.loadOwner('referrals',0,'old');await tick();await c.harness.loadOwner('payouts',0,'');const message=c.get('account-message').textContent;no(Error('private failure'));await old;assert.equal(c.get('account-owner').textContent,before);assert.equal(c.get('account-message').textContent,message);
+});
+
 test('influencer home uses commissions and payouts rather than a member Pro reward card',async()=>{
  const c=setup();c.harness.renderDashboard(view('influencer'));await tick();
  assert.match(c.get('account-dashboard').textContent,/Recorded payouts/);
@@ -415,6 +449,57 @@ test('initial launch draft retains existing custom global and individual terms',
    for(const signup of [1,2,10,1000,1000000]){assert.equal(referralCommission(netCents,signup,true,p.terms),639);assert.equal(referralCommission(netCents,signup,false,p.terms),119);}
    assert.equal(referralCommission(0,1,true,p.terms),0);assert.equal(referralCommission(0,1,false,p.terms),0);
    assert.equal(JSON.stringify(a.totals()),before);assert.equal(s.get('SELECT count(*) n FROM account_referral_entries').n,0);assert.equal(s.get('SELECT count(*) n FROM account_referral_payouts').n,0);assert.equal(s.settings().billing_enabled,false);
+  }finally{s.db.close();}
+ });
+}
+
+
+{
+ const ownerId='11111111-1111-4111-8111-111111111111',partnerId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',otherId='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+ function ownerReadFixture(){
+  const s=new ProposalStore(),a=new ProposalAccounts(s);a.ensure(partnerId);a.ensure(otherId);a.initializeLaunchDraft(ownerId);
+  for(let i=0;i<61;i++)s.run('INSERT INTO account_referral_signups VALUES(?,?,?,?,?,?,?)','scoped-'+i,partnerId,'synthetic-scope-'+i,'pending',null,1000+i,null);
+  s.run('INSERT INTO account_referral_signups VALUES(?,?,?,?,?,?,?)','other-ref',otherId,'synthetic-other','pending',null,2000,null);
+  return {s,a};
+ }
+ test('owner details: exact partner scope and pagination never blend another account or global totals',()=>{
+  const {s,a}=ownerReadFixture();try{
+   const before=JSON.stringify(s.all('SELECT * FROM account_referral_meta'))+JSON.stringify(s.settings());
+   const first=a.ownerView(ownerId,{section:'referrals',partnerId}),next=a.ownerView(ownerId,{section:'referrals',partnerId,offset:50});
+   assert.equal(first.partner.user_id,partnerId);assert.equal(first.rows.length,50);assert.equal(first.pagination.total,61);assert.equal(next.rows.length,11);assert.equal(next.pagination.nextOffset,null);assert.equal(first.totals.signups,61);
+   assert.ok([...first.rows,...next.rows].every(r=>r.partner_id===partnerId));assert.equal(a.ownerView(ownerId).totals.signups,62);
+   assert.equal(JSON.stringify(s.all('SELECT * FROM account_referral_meta'))+JSON.stringify(s.settings()),before);
+   assert.equal(s.get('SELECT count(*) n FROM subscriptions').n,0);assert.equal(s.get('SELECT count(*) n FROM account_referral_entries').n,0);assert.equal(s.get('SELECT count(*) n FROM account_referral_payouts').n,0);
+   assert.deepEqual(first.holds,{publicSignup:false,liveBilling:false,referrals:false,promotions:false,payouts:false});
+  }finally{s.db.close();}
+ });
+ test('owner details: invalid, unknown or mixed scope fails without creating a partner',()=>{
+  const {s,a}=ownerReadFixture();try{
+   for(const args of [{partnerId:'bad'},{partnerId,query:'a'},{partnerId,section:'audit'},{partnerId,offset:-1}])assert.throws(()=>a.ownerView(ownerId,args),/INVALID_ACCOUNT_QUERY/);
+   assert.throws(()=>a.ownerView(ownerId,{partnerId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc'}),/PARTNER_NOT_FOUND/);
+   assert.equal(s.get('SELECT count(*) n FROM account_referral_partners').n,2);
+   for(const section of ['partners','entries','payouts','terms']){const v=a.ownerView(ownerId,{partnerId,section});assert.ok(v.rows.every(r=>(section==='partners'?r.user_id:r.partner_id)===partnerId));}
+  }finally{s.db.close();}
+ });
+ test('owner search: code underscores are literal and account ID prefixes also work',()=>{
+  const {s,a}=ownerReadFixture();try{
+   s.run('UPDATE account_referral_partners SET code=? WHERE user_id=?','abc_def',partnerId);s.run('UPDATE account_referral_partners SET code=? WHERE user_id=?','abcXdef',otherId);
+   assert.deepEqual(a.ownerView(ownerId,{query:'abc_'}).rows.map(r=>r.user_id),[partnerId]);
+   assert.deepEqual(a.ownerView(ownerId,{query:'aaaa'}).rows.map(r=>r.user_id),[partnerId]);
+   assert.throws(()=>a.ownerView(ownerId,{query:"%' OR 1=1"}),/INVALID_ACCOUNT_QUERY/);
+  }finally{s.db.close();}
+ });
+ test('owner details HTTP: existing verified owner and approved origin remain required',async()=>{
+  const {s}=ownerReadFixture();try{
+   const config={accountWebsiteEnabled:true,accountOwners:[ownerId],publishable:'sb_publishable_synthetic',testUsers:[],testCheckoutEnabled:false};
+   let identity=ownerId,eligible=true,providerCalls=0;
+   const fetcher=async url=>{if(url.endsWith('/auth/v1/user'))return Response.json({id:identity});if(url.endsWith('/rpc/beta_access'))return Response.json(eligible);providerCalls++;throw Error('Unexpected provider call');};
+   const h=handler(s,config,fetcher),request=(body={},origin='https://ezpepplanner.com',token='Bearer synthetic')=>new Request('https://builder-pepplan.aurapep.ca/accounts/owner/view',{method:'POST',headers:{authorization:token,origin},body:JSON.stringify(body)});
+   let r=await h(request({section:'referrals',partnerId}));assert.equal(r.status,200);assert.equal((await r.json()).pagination.total,61);
+   identity=otherId;assert.equal((await h(request({partnerId}))).status,403);
+   identity=ownerId;eligible=false;assert.equal((await h(request({partnerId}))).status,403);eligible=true;
+   assert.equal((await h(request({partnerId},'https://other.invalid'))).status,403);assert.equal((await h(request({partnerId},undefined,''))).status,401);
+   assert.equal((await h(request({partnerId,unexpected:true}))).status,400);assert.equal(providerCalls,0);assert.equal(s.settings().billing_enabled,false);
   }finally{s.db.close();}
  });
 }

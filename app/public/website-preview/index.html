@@ -53,7 +53,7 @@ const API='https://builder-pepplan.aurapep.ca/ezpep-accounts',PROJECT='https://c
 // Retain the two containers when navigation rebuilds their parent shell.
 const panels=new Map(['account-owner','account-editor'].map(id=>[id,document.getElementById(id)]));
 const byId=id=>panels.get(id)||document.getElementById(id),message=byId('account-message');
-let config=null,session=null,generation=0,busy=false,refreshing=null,ownerRevision=null,ownerSection='partners',ownerOffset=0,ownerQuery='',draftDirty=false;
+let config=null,session=null,generation=0,busy=false,refreshing=null,ownerRevision=null,ownerSection='partners',ownerOffset=0,ownerQuery='',ownerPartnerId=null,draftDirty=false;
 let accountView=null,accountSection='overview';
 function portalRoute(){
  const active=location.hash==='#account'||location.hash.startsWith('#account/');
@@ -106,7 +106,7 @@ async function fetchJson(url,options={},epoch=generation){
  }catch(error){if(epoch!==generation)throw Error('ACCOUNT_CHANGED');throw error;}finally{clearTimeout(timer);controllers.delete(controller);}
 }
 function reset(text){
- generation++;busy=false;for(const c of controllers)c.abort();controllers.clear();session=null;refreshing=null;config=null;ownerRevision=null;draftDirty=false;accountView=null;accountSection='overview';
+ generation++;busy=false;for(const c of controllers)c.abort();controllers.clear();session=null;refreshing=null;config=null;ownerRevision=null;ownerPartnerId=null;draftDirty=false;accountView=null;accountSection='overview';
  for(const id of ['account-dashboard','account-owner','account-editor']){byId(id).replaceChildren();byId(id).hidden=true;}
  byId('account-login').hidden=true;byId('account-password').value='';byId('account-intro').hidden=false;byId('account-connect').hidden=false;notify(text);
 }
@@ -257,25 +257,43 @@ async function load(){
  const epoch=generation,requestId=++dashboardLoad;notify('Loading verified account records…');
  try{const v=await api('/dashboard');if(epoch!==generation||requestId!==dashboardLoad)return;renderDashboard(v);byId('account-intro').hidden=true;notify('Account records loaded. Referral activation, signup, billing and payouts remain paused.');}catch(error){if(epoch===generation&&requestId===dashboardLoad){if(byId('account-dashboard').hidden){byId('account-login').hidden=false;session=null;}fail(error);}}
 }
-async function loadOwner(section=ownerSection,offset=ownerOffset,query=ownerQuery,settingsOnly=false,overview=false){
- const epoch=generation,requestId=++ownerLoad;try{
-  const v=holdView(await api('/owner/view',{section,offset,query}));if(epoch!==generation||requestId!==ownerLoad||accountView?.account.role!=='owner')return;
-  if(v.account.role!=='owner')throw Error('OWNER_REQUIRED');ownerRevision=v.revision;ownerSection=section;ownerOffset=offset;ownerQuery=query;
-  const root=byId('account-owner');root.replaceChildren();root.hidden=false;root.className='account-panel';
+async function loadOwner(section=ownerSection,offset=ownerOffset,query=ownerQuery,settingsOnly=false,overview=false,partnerId=null){
+ if(accountView?.account.role!=='owner')return;
+ if(draftDirty){notify('Save or cancel your unfinished owner draft before changing records.');return;}
+ const epoch=generation,requestId=++ownerLoad,root=byId('account-owner');
+ root.replaceChildren();root.hidden=false;root.className='account-panel';heading(root,'Loading account records…','Your saved records remain unchanged.');
+ try{
+  const v=holdView(await api('/owner/view',{section,offset,query,...(partnerId?{partnerId}:{})}));if(epoch!==generation||requestId!==ownerLoad||accountView?.account.role!=='owner')return;
+  if(v.account.role!=='owner')throw Error('OWNER_REQUIRED');ownerRevision=v.revision;ownerSection=section;ownerOffset=offset;ownerQuery=query;ownerPartnerId=partnerId;
+  if(partnerId&&(!v.partner||v.partner.user_id!==partnerId||v.section!==section||v.rows.some(r=>(section==='partners'?r.user_id:r.partner_id)!==partnerId)))throw Error('INVALID_ACCOUNT_RESPONSE');
+  root.replaceChildren();
   if(settingsOnly){heading(root,'Program settings','Save versioned drafts with a reason. Historical rewards, commissions and access are preserved.');termsSummary(root,v.policy);root.append(button('Edit global draft terms',()=>editTerms(null,v.policy)));return;}
   if(overview)heading(root,'Referral program','Ordinary members earn free Pro months; influencers earn commissions under their individual terms. Activation remains paused.');
-  const metrics=node('div',undefined,'account-metrics');metric(metrics,'Registered referral profiles',v.partnerCount);root.append(metrics);counts(root,v.totals,true);
-  const search=node('form',undefined,'account-search'),label=node('label',section==='partners'?'Find a referral code':'Find a partner ID prefix'),input=node('input');input.value=query;input.maxLength=80;input.pattern='[a-zA-Z0-9_-]*';label.append(input);search.append(label);const submit=node('button','Find','button secondary');submit.type='submit';search.append(submit);search.addEventListener('submit',e=>{e.preventDefault();void loadOwner(section,0,input.value.trim());});root.append(search);
-  root.append(button('Edit global draft terms',()=>editTerms(null,v.policy)));
+  if(partnerId){
+   heading(root,v.partner.role==='influencer'?'Influencer details':'Member referral details','Referral records for one account. This is not its membership, billing or app-usage profile.');
+   root.append(node('p','Account ID: '+partnerId),node('p','Referral code: '+v.partner.code),button('Back to members & partners',()=>void loadOwner('partners',0,'')));
+   const tabs=node('div',undefined,'actions');
+   for(const [key,label] of [['partners','Summary'],['referrals','Referrals'],['entries','Rewards & commissions'],['payouts','Payout history'],['terms','Individual term versions']]){
+    const tab=button(label,()=>void loadOwner(key,0,'',false,false,partnerId));if(key===section)tab.setAttribute('aria-current','page');tabs.append(tab);
+   }root.append(tabs);
+  }
+  const metrics=node('div',undefined,'account-metrics');if(!partnerId)metric(metrics,'Registered referral profiles',v.partnerCount);root.append(metrics);counts(root,v.totals,true);
+  if(!partnerId){const search=node('form',undefined,'account-search'),label=node('label',section==='partners'?'Find a referral code or account ID prefix':'Find a partner ID prefix'),input=node('input');input.value=query;input.maxLength=80;input.pattern='[a-zA-Z0-9_-]*';label.append(input);search.append(label);const submit=node('button','Find','button secondary');submit.type='submit';search.append(submit);search.addEventListener('submit',e=>{e.preventDefault();void loadOwner(section,0,input.value.trim());});root.append(search);}
+  if(!partnerId)root.append(button('Edit global draft terms',()=>editTerms(null,v.policy)));
   const identity=r=>r.user_id||r.partner_id||'Global';
-  if(section==='partners')table(root,v.rows,[['Partner',r=>r.user_id],['Role',r=>r.role+(r.pending_role?' · influencer draft':'')],['Signups',r=>r.totals.signups],['Qualified',r=>r.totals.qualified],['Owed',r=>money(r.totals.owedCents)]],'No registered partner profiles.',(cell,row)=>{cell.append(button('Individual terms',()=>editTerms(row.user_id,row.policy)));if(row.role==='member'&&!row.pending_role)cell.append(button('Prepare influencer promotion',()=>promote(row.user_id)));});
+  if(partnerId&&section==='partners'){
+   termsSummary(root,v.policy);root.append(button('Individual terms',()=>editTerms(partnerId,v.policy)));
+   if(v.partner.role==='member'&&!v.partner.pending_role)root.append(button('Prepare influencer promotion',()=>promote(partnerId)));
+   if(v.partner.pending_role)root.append(node('p','Influencer promotion draft recorded. Activation remains paused.'));
+  }
+  else if(section==='partners')table(root,v.rows,[['Partner',r=>r.user_id],['Role',r=>r.role+(r.pending_role?' · influencer draft':'')],['Signups',r=>r.totals.signups],['Qualified',r=>r.totals.qualified],['Available Pro months',r=>r.totals.availableMonths],['Commissions owed (CAD)',r=>money(r.totals.owedCents)]],'No registered partner profiles.',(cell,row)=>{cell.append(button('View details',()=>void loadOwner('partners',0,'',false,false,row.user_id)));cell.append(button('Individual terms',()=>editTerms(row.user_id,row.policy)));if(row.role==='member'&&!row.pending_role)cell.append(button('Prepare influencer promotion',()=>promote(row.user_id)));});
   else if(section==='referrals')table(root,v.rows,[['Partner',identity],['Referral',r=>r.id],['Status',r=>r.state],['Terms',r=>display(r.term_version)],['Recorded',r=>date(r.created_at)]],'No referral records.');
   else if(section==='entries')table(root,v.rows,[['Partner',identity],['Type',r=>r.kind],['Status',r=>r.phase],['Amount',r=>r.currency==='cad'?money(r.amount):r.amount+' Pro months'],['Terms',r=>r.term_version]],'No reward or commission records.');
   else if(section==='payouts')table(root,v.rows,[['Partner',identity],['Reference',r=>r.reference],['Paid',r=>date(r.paid_at)],['Amount',r=>money(r.amount)]],'No payout records. Payments remain paused.');
   else if(section==='terms')table(root,v.rows,[['Version',r=>r.version],['Scope',identity],['Status',r=>r.state],['Recorded',r=>date(r.created_at)]],'No saved draft terms.');
   else table(root,v.rows,[['Action',r=>r.action],['Partner',r=>r.target||'Global'],['Revision',r=>r.revision],['Reason',r=>r.reason],['Recorded',r=>date(r.created_at)]],'No owner changes recorded.');
-  pager(root,v.pagination,next=>void loadOwner(section,next,query));
- }catch(error){fail(error);}
+  pager(root,v.pagination,next=>void loadOwner(section,next,query,false,false,partnerId));
+ }catch(error){if(epoch===generation&&requestId===ownerLoad&&accountView?.account.role==='owner'){root.replaceChildren();heading(root,'Records could not be loaded','No records were changed. Try again to load this view.');root.append(button('Retry loading records',()=>void loadOwner(section,offset,query,settingsOnly,overview,partnerId)));fail(error);}}
 }
 function field(form,label,value,type='text',min,max){
  const wrap=node('label',label),input=node('input');input.type=type;input.value=value===null||value===undefined?'':String(value);if(min!==undefined)input.min=min;if(max!==undefined)input.max=max;input.maxLength=500;wrap.append(input);form.append(wrap);return input;
@@ -289,7 +307,7 @@ async function saveDraft(form,body){
  const epoch=generation;const submit=form.querySelector('[type="submit"]');submit.disabled=true;
  try{
   const result=await api('/owner/draft',body);if(epoch!==generation)return;if(result.saved!=='draft'||result.activationChanged!==false)throw Error('INVALID_ACCOUNT_RESPONSE');
-  ownerRevision=result.revision;cancelEditor();notify('Draft saved. No referral, reward entitlement, billing or payout was activated.');await loadOwner(ownerSection,ownerOffset,ownerQuery,accountSection==='settings',accountSection==='overview');
+  ownerRevision=result.revision;cancelEditor();notify('Draft saved. No referral, reward entitlement, billing or payout was activated.');await loadOwner(ownerSection,ownerOffset,ownerQuery,accountSection==='settings',accountSection==='program',ownerPartnerId);
  }catch(error){fail(error);}finally{if(epoch===generation)submit.disabled=false;}
 }
 function promote(target){

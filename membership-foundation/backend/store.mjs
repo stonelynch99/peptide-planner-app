@@ -296,8 +296,11 @@ export class ReferralAccounts {
   const rows=this.s.all('SELECT '+d.columns+' FROM '+d.table+' WHERE partner_id=? ORDER BY '+d.order+' LIMIT 50 OFFSET ?',user,offset);
   return {schemaVersion:1,mode:'preparation',holds:ACCOUNT_HOLDS,account:{id:user,role:p.role},section,rows,pagination:{offset,total,nextOffset:offset+rows.length<total?offset+rows.length:null}};
  }
- ownerView(user,{section='partners',offset=0,query=''}={}){
+ ownerView(user,{section='partners',offset=0,query='',partnerId=null}={}){
   if(!['partners','referrals','entries','payouts','terms','audit'].includes(section)||!integer(offset,0,1000000)||typeof query!=='string'||query.length>80||!/^[a-zA-Z0-9_-]*$/.test(query))throw Error('INVALID_ACCOUNT_QUERY');
+  if(partnerId!==null&&(!UUID.test(partnerId)||query||!['partners','referrals','entries','payouts','terms'].includes(section)))throw Error('INVALID_ACCOUNT_QUERY');
+  const partner=partnerId===null?null:this.s.get('SELECT user_id,code,role,pending_role,created_at FROM account_referral_partners WHERE user_id=?',partnerId);
+  if(partnerId!==null&&!partner)throw Error('PARTNER_NOT_FOUND');
   const definitions={
    partners:{table:'account_referral_partners',order:'created_at DESC,user_id',columns:'user_id,code,role,pending_role,created_at',search:'code'},
    referrals:{table:'account_referral_signups',order:'created_at DESC,id',columns:'id,partner_id,state,term_version,created_at,qualified_at',search:'partner_id'},
@@ -306,12 +309,14 @@ export class ReferralAccounts {
    terms:{table:'account_referral_terms',order:'version DESC',columns:'version,scope,partner_id,terms,state,created_at',search:'partner_id'},
    audit:{table:'account_referral_audit',order:'created_at DESC,id',columns:'id,action,target,revision,reason,created_at',search:'target'}
   };
-  const d=definitions[section],where=query?' WHERE '+d.search+' LIKE ?':'',args=query?[query+'%']:[];
+  const d=definitions[section],literal=query.replaceAll('_','!_')+'%';
+  const where=partner?' WHERE '+(section==='partners'?'user_id':'partner_id')+'=?':query?' WHERE '+(section==='partners'?"(code LIKE ? ESCAPE '!' OR user_id LIKE ? ESCAPE '!')":d.search+" LIKE ? ESCAPE '!'"):'';
+  const args=partner?[partnerId]:query?(section==='partners'?[literal,literal]:[literal]):[];
   const total=this.s.get('SELECT count(*) n FROM '+d.table+where,...args).n;
   const rows=this.s.all('SELECT '+d.columns+' FROM '+d.table+where+' ORDER BY '+d.order+' LIMIT 50 OFFSET ?',...args,offset);
   if(section==='partners')rows.forEach(p=>{p.totals=this.totals(p.user_id);p.policy=this.terms(p.user_id);});
   if(section==='terms')rows.forEach(r=>{r.terms=JSON.parse(r.terms);});
-  return {schemaVersion:1,mode:'preparation',holds:ACCOUNT_HOLDS,revision:this.revision(),account:{id:user,role:'owner'},totals:this.totals(),partnerCount:this.s.get('SELECT count(*) n FROM account_referral_partners').n,section,rows,pagination:{offset,total,nextOffset:offset+rows.length<total?offset+rows.length:null},policy:this.terms(null)};
+  return {schemaVersion:1,mode:'preparation',holds:ACCOUNT_HOLDS,revision:this.revision(),account:{id:user,role:'owner'},partner,totals:this.totals(partnerId),partnerCount:this.s.get('SELECT count(*) n FROM account_referral_partners').n,section,rows,pagination:{offset,total,nextOffset:offset+rows.length<total?offset+rows.length:null},policy:this.terms(partnerId)};
  }
  draft(user,input){
   if(!exact(input,['action','expectedRevision','reason','target','terms']))throw Error('INVALID_ACCOUNT_ACTION');
