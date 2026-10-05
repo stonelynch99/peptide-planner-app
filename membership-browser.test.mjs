@@ -48,6 +48,7 @@ import {referralQualificationReadiness,planReferralQualification} from './member
 
 import test from 'node:test';import assert from 'node:assert/strict';import {handler} from './membership-foundation/backend/http.mjs';
 
+import './membership-foundation/backend/checks.mjs';
 import {StripeTest as PolicyStripe,ACCOUNT as PolicyStripeAccount} from './membership-foundation/backend/service.mjs';
 {
  const policySha='69b7b48aed8d74807353ce25c314608b739a389a18811083dc5299c5471d55cf';

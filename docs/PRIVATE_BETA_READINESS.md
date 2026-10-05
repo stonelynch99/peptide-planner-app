@@ -1,3 +1,24 @@
+# Operational launch acceptance — October 4, 2026 Vancouver
+Cloud-first routine execution; final receipts in protected REVIEW/HANDOFF. This entry supersedes earlier incomplete test coverage.
+
+## Completed fresh checks
+- Membership and cloud-planner off-host backups healthy, restore checks passed; latest successes2026-10-04T10:15:53Z and10:31:16Z. This does NOT cover unsynced device changes or independent server-outage alerting.
+- Feedback network-disabled interaction checks pass at412 and1366: image selection/removal, failure preservation, refresh recovery, one-report retry, reviewer identity/enlargement/close. No real submission/email; physical-phone acceptance remains separate.
+-22 reminder lifecycle/backend checks pass offline, including pause/resume, early-completion tombstones, snooze, stale generation, origin/secret/activation restrictions. No live reminder changes or notifications; iPhone/delivery-timing acceptance remains open.
+- Reviewed all3 existing feedback reports; no newer report found. Vince decimal report remains awaiting tester information. Screenshot already shows3.4mL and10.2units; not proof of failure. Previous follow-up already sent; no new email or resolution recorded.
+
+## Implemented repair and coverage; final hosted validation pending
+The separate subscription lifecycle runner failed its conflicting duplicate-event test. Reproduced against actual service/store source: webhook early duplicate-ID return bypassed Store.apply's raw-body hash check. Repaired early path to compare saved event hash under existing subscription lease and reject EVENT_CONFLICT before returning duplicate. Identical retries remain harmless; signed/canonical TEST/provider scope checks and all activation holds preserved. No event/ledger records rewritten. Existing22 lifecycle checks now pass locally.
+Added regression proving conflicting retry leaves event/invoice/membership unchanged, releases lease and permits identical retry without another snapshot. Included the backend lifecycle suite in the main regression entry so the normal all-tests gate now covers this branch.
+Added four actual-source UI/calculation/persistence acceptance cases for raw decimal typing,3.4mL/custom entry, tenths/hundredths andmg/mcg arithmetic, activation and logged history through export/reload. These are synthetic; they do not resolve Vince's physical-device report.
+
+## New unresolved dependency gate
+Expo Doctor20/21: expo expected~57.0.26, found57.0.23; expo-notifications expected~57.0.21, found57.0.19. No warning exclusion added. Before launch, update both through a consistent isolated dependency install/package lock operation, then Doctor/TypeScript/export/reminder/full regression checks. Current Builder catalog has checks and guarded text workspaces but no dependency-install operation; do not fabricate lockfile integrity or alter only package.json. Current working build is not evidence that this gate passed.
+A new backend source commit does NOT install a runtime; require fixed account-service release validation/deploy/integrity receipts. Billing/public signup/referral/promotion/payout activation remains off.799/499 exclusive TEST prices and full public admission/entitlement/finance/referral integration still open.
+Course-flow redesign remains lower priority as requested. Beta access, unsynced/customer data and all3 pending files must remain intact.
+
+---
+
 # Current launch gate audit — October 4, 2026 Vancouver
 Owner: Stone Lynch. Cloud-first operations; this checkpoint supersedes historical blocked/publication and older-policy claims below. Protected REVIEW/HANDOFF contain final job receipts.
 
