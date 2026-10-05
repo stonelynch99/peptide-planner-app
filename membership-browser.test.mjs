@@ -308,6 +308,38 @@ function setup(fetcher){
 }
 function view(role='member') {return {schemaVersion:1,mode:'preparation',account:{id,role,pendingRole:null},holds:{liveBilling:false,payouts:false,promotions:false,publicSignup:false,referrals:false},totals:{signups:0,qualified:0,pending:0,pendingMonths:0,earnedMonths:0,redeemedMonths:0,availableMonths:0,pendingCents:0,earnedCents:0,paidCents:0,owedCents:0,balanceCents:0},policy:null,tierProgress:{tier:null},sharing:{referralUrl:null}};}
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('owner navigation puts app screens first and collapses referral management on overview',async()=>{
+ const c=setup();c.harness.renderDashboard(view('owner'));await tick();
+ const nav=c.get('account-dashboard').walk().find(e=>e.tagName==='nav'&&e.attrs['aria-label']==='Account screens');
+ assert.deepEqual(nav.children[0].children.map(e=>e.textContent),['Overview','Members','Revenue','App usage']);
+ const group=nav.children.find(e=>e.tagName==='details');assert.equal(group.open,false);assert.equal(group.children[0].tagName,'summary');assert.equal(group.children[0].textContent,'Referral management');
+ assert.deepEqual(group.children[1].children.map(e=>e.textContent),['Referral program','Referral accounts','All referrals','Rewards & commissions','Payout history','Program settings','Term versions','Change history']);
+ assert.deepEqual(nav.children.at(-1).children.map(e=>e.textContent),['My membership','Help']);
+});
+test('owner management deep links reveal the active screen without losing any route',async()=>{
+ const c=setup();c.harness.renderDashboard(view('owner'));await tick();
+ for(const key of ['program','partners','referrals','entries','payouts','settings','terms','audit']){
+  c.harness.selectSection(key);await tick();const all=c.get('account-dashboard').walk();
+  assert.equal(all.find(e=>e.className==='account-nav-group').open,true);
+  assert.equal(all.filter(e=>e.attrs['aria-current']==='page').length,1);
+  assert.equal(c.location.hash,'#account/'+key);
+ }
+ c.harness.selectSection('members');await tick();assert.equal(c.get('account-dashboard').walk().find(e=>e.className==='account-nav-group').open,false);
+});
+test('grouped navigation still refuses to leave an unfinished owner draft',async()=>{
+ const c=setup();c.harness.renderDashboard(view('owner'));await tick();c.harness.selectSection('settings');await tick();
+ c.harness.editTerms(null,null);c.harness.setDirty(true);const form=c.get('account-editor').children[0];
+ const nav=c.get('account-dashboard').walk().find(e=>e.tagName==='nav');
+ nav.walk().find(e=>e.tagName==='button'&&e.textContent==='Members').listeners.click();
+ assert.equal(c.get('account-editor').children[0],form);assert.equal(c.location.hash,'#account/settings');
+ assert.match(c.get('account-message').textContent,/unfinished owner draft/);
+});
+test('member and influencer navigation never gains owner management groups',async()=>{
+ for(const role of ['member','influencer']){const c=setup();c.harness.renderDashboard(view(role));await tick();
+  const nav=c.get('account-dashboard').walk().find(e=>e.tagName==='nav');assert.ok(nav.children.every(e=>e.tagName==='button'));
+  assert.ok(!nav.children.some(e=>['Referral management','Members','Revenue','Program settings'].includes(e.textContent)));
+ }
+});
 test('member shell has real zero balances, held sharing and no owner navigation',async()=>{const c=setup();c.harness.renderDashboard(view());await tick();const root=c.get('account-dashboard');assert.match(root.textContent,/Available Pro months 0/);assert.match(root.textContent,/remains inactive/);assert.doesNotMatch(root.textContent,/Program settings|Alex|Sample|427\.30/);assert.equal(root.walk().filter(e=>e.attrs['aria-current']==='page').length,1);});
 test('influencer separates pending, earned, paid and owed without inventing tiers',async()=>{const c=setup();const v=view('influencer');Object.assign(v.totals,{pendingCents:100,earnedCents:350,paidCents:200,owedCents:150});c.harness.renderDashboard(v);await tick();assert.match(c.get('account-dashboard').textContent,/Pending commissions \$1\.00/);assert.match(c.get('account-dashboard').textContent,/Commissions owed \$1\.50/);assert.match(c.get('account-dashboard').textContent,/Tier quotas have not been set/);});
 test('owner settings use authenticated owner route and versioned editor with no default rates',async()=>{const c=setup();c.harness.renderDashboard(view('owner'));await tick();c.harness.selectSection('settings');await tick();assert.match(c.get('account-owner').textContent,/terms have not been set/);assert.match(c.requests.at(-1).url,/owner\/view$/);c.harness.editTerms(null,null);const inputs=c.get('account-editor').walk().filter(e=>e.tagName==='input');assert.ok(inputs.every(e=>e.value===''));assert.match(c.get('account-editor').textContent,/Reason for this draft change/);});

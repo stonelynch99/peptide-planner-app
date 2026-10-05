@@ -1,3 +1,14 @@
+# Owner portal navigation milestone — October 5, 2026 UTC
+Cloud-first development. Publication and complete test receipts belong in protected REVIEW/HANDOFF; this source entry does not claim deployment.
+
+Implemented: owner navigation starts with Overview, Members, Revenue and App usage. Referral management is a native keyboard-accessible disclosure containing all eight existing administrative routes; it opens automatically for an active management screen. My membership and Help remain separate. Mobile owner navigation uses wrapping two-column buttons rather than a fourteen-button horizontal strip. Member and influencer routes remain role-specific. No new membership, revenue, reward or commission data source is implied.
+
+Focused checks: four actual portal DOM regressions pass for primary ordering, all management deep links, unsaved-draft navigation refusal, and exclusion of owner controls from member/influencer navigation. Hosted full tests, export and publication require separate receipts.
+
+Previous operational milestone: full445/445 tests passed, source8b6375a984a1fd3d6960e92a82f8878e000e192f verified on GitHub, account service replay-conflict repair installed and independently verified. The older pending-validation heading below is historical.
+
+Open launch gates remain: Expo/notifications dependency alignment plus lockfile; exclusive-tax TEST799/499 prices and protected policy binding; end-to-end public Free/Pro enrollment, referral capture/confirmed-payment reward and commission flow; physical-phone acceptance; final support/privacy/paid terms and unresolved qualification/payout decisions. Preserve invited beta access, unsynced records and signup/billing/referral/promotion/payout holds. Owner overall public-member and real revenue reports remain unconnected. Course catalog to separate course pages is a later usability item.
+
 # Operational launch acceptance — October 4, 2026 Vancouver
 Cloud-first routine execution; final receipts in protected REVIEW/HANDOFF. This entry supersedes earlier incomplete test coverage.
 

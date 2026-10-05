@@ -186,7 +186,16 @@ function renderDashboard(value){
  const nav=node('nav');nav.setAttribute('aria-label','Account screens');
  const sections=role==='owner'?[['overview','Overview'],['members','Members'],['revenue','Revenue'],['usage','App usage'],['program','Referral program'],['membership','My membership'],['help','Help'],['partners','Referral accounts'],['referrals','All referrals'],['entries','Rewards & commissions'],['payouts','Payout history'],['settings','Program settings'],['terms','Term versions'],['audit','Change history']]:[['overview','Overview'],['membership','Membership'],['help','Help'],['referrals','My referrals'],['entries',role==='member'?'My rewards':'My earnings'],...(role==='member'?[]:[['payouts','Payout history']]),['sharing','Share EZPep'],['policy','My terms']];
  if(!sections.some(([key])=>key===accountSection))accountSection='overview';
- for(const [key,label] of sections){const b=button(label,()=>selectSection(key));b.className='account-nav-button';b.setAttribute('aria-current',key===accountSection?'page':'false');nav.append(b);}
+ const addNavigation=(target,items)=>{for(const [key,label] of items){const b=button(label,()=>selectSection(key));b.className='account-nav-button';b.setAttribute('aria-current',key===accountSection?'page':'false');target.append(b);}};
+ if(role==='owner'){
+  const primary=sections.filter(([key])=>['overview','members','revenue','usage'].includes(key));
+  const management=sections.filter(([key])=>!['overview','members','revenue','usage','membership','help'].includes(key));
+  const primaryLinks=node('div',undefined,'account-nav-links');primaryLinks.setAttribute('aria-label','App overview');addNavigation(primaryLinks,primary);nav.append(primaryLinks);
+  const group=node('details',undefined,'account-nav-group'),summary=node('summary','Referral management');
+  group.open=management.some(([key])=>key===accountSection);group.append(summary);
+  const managementLinks=node('div',undefined,'account-nav-links');addNavigation(managementLinks,management);group.append(managementLinks);nav.append(group);
+  const personalLinks=node('div',undefined,'account-nav-links account-nav-personal');addNavigation(personalLinks,sections.filter(([key])=>['membership','help'].includes(key)));nav.append(personalLinks);
+ }else addNavigation(nav,sections);
  const app=link('Open app ↗','https://app.ezpepplanner.com/');app.target='_blank';app.rel='noopener';sidebar.append(nav,app);
  const main=node('div',undefined,'account-main'),top=node('div',undefined,'account-topbar');
  top.append(node('span','ACCOUNT / '+role.toUpperCase(),'account-eyebrow'),node('span','Program on hold','account-badge'),button('Refresh',()=>{if(draftDirty){notify('Save or cancel your draft before refreshing.');return;}void load();}),button('Sign out',()=>{if(draftDirty){notify('Save or cancel your unfinished owner draft before signing out.');return;}reset('Signed out of this website page. Your planner sign-in and saved data are unchanged.');}));
