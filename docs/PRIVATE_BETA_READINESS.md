@@ -302,3 +302,15 @@ Use the existing Supabase dashboard/admin environment. Never put an admin key in
 - Before any launch, obtain separate authorization for the hosting target and access controls, establish a functional support/reply route, and review unresolved operational issues. No marketing list enrollment.
 
 Official references: [database functions](https://supabase.com/docs/guides/database/functions), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security), [admin deletion](https://supabase.com/docs/reference/javascript/auth-admin-deleteuser), [sign-out scope](https://supabase.com/docs/guides/auth/signout).
+
+
+## 2026-10-04 infrastructure repair checkpoint (Cloud continuation)
+- Cloud Builder remains the routine development/publication operator. No seven-release publication was performed by this repair.
+- Observed production c9b363b660671c38ee3269fa77a89b470497cd38: GitHub run 37229867085, artifact 11312578900; all 17 live files verified. Durable observed reconciliation retains the original failed preflight and does not invent dispatch.
+- Source-only push must first land the exact reviewed dispatch-only Pages workflow. The old push-trigger workflow now fails closed before pushing; preserve its prior enabled/disabled state on completion or reconciled interruption.
+- Current live ZIP preserved; provider artifact expires 2026-10-05T19:52:04Z. Recheck exact rollback readiness before publication; no claim of permanent provider restore after expiry.
+- Policy v3 candidate manifest d948915a14f5636cfe720bb24c16e71b5fa438f4b8272963cbfd58a729b5c237: 18 runtime and 9 installer checks pass; restricted installer registered, candidate runtime NOT applied. Cloud must review and deploy with fresh policy/HEAD/diff/state guards. Enforcement activation remains held.
+- Marketing projection preserves the link to app-hosted provider/privacy disclosure and rejects scripts, forms, credentials, private administration and Supabase marketing text. Authenticated publication review waits for guarded source push.
+- CAD799 existing TEST price has unspecified tax treatment; CAD499 exclusive TEST price missing. Additive exclusive-tax configuration only is prepared; checkout and offers remain disabled; historical899 preserved.
+- Existing beta, all saved data, ownership/revision checks and launch holds preserved. Offer capacity/eligibility/deadline, beta duration and referral/payout terms remain undecided.
+- Exact evidence, tool contracts, backups and next Cloud checks: current protected REVIEW.md/HANDOFF.md.

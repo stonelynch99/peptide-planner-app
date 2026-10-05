@@ -2,11 +2,6 @@ name: EZPep Planner private beta
 
 on:
   workflow_dispatch:
-  push:
-    branches: [develop/0.4-multiplan]
-    paths:
-      - app/**
-      - .github/workflows/private-beta-pages.yml
 
 permissions:
   contents: read
