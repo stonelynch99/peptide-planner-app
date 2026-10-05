@@ -47,6 +47,53 @@ import {referralQualificationReadiness,planReferralQualification} from './member
 }
 
 import test from 'node:test';import assert from 'node:assert/strict';import {handler} from './membership-foundation/backend/http.mjs';
+
+import {StripeTest as PolicyStripe,ACCOUNT as PolicyStripeAccount} from './membership-foundation/backend/service.mjs';
+{
+ const policySha='69b7b48aed8d74807353ce25c314608b739a389a18811083dc5299c5471d55cf';
+ function priceFixture(overrides={},config={}){
+  const requests=[],price={livemode:false,active:true,currency:'cad',unit_amount:799,product:'prod_VMXe685VevnLX8',tax_behavior:'exclusive',recurring:{interval:'month',interval_count:1},...overrides};
+  const stripe=new PolicyStripe({secret:'sk_test_synthetic',price:'price_synthetic799',membershipPolicySha:policySha,...config},async(url,options)=>{
+   const path=new URL(url).pathname;requests.push({path,method:options.method,body:options.body});
+   const value=path==='/v1/account'?{id:PolicyStripeAccount}:path.startsWith('/v1/prices/')?price:path==='/v1/customers'?{id:'cus_synthetic'}:{livemode:false,id:'cs_test_synthetic',url:'https://checkout.stripe.com/c/pay/cs_test_synthetic'};
+   return {ok:true,json:async()=>value};
+  });return {stripe,requests};
+ }
+ test('policy price: exact current CAD799 exclusive dedicated TEST product is accepted',async()=>{
+  const {stripe,requests}=priceFixture();const r=await stripe.readiness();assert.equal(r.monthly_cents,799);assert.equal(r.tax_behavior,'exclusive');assert.equal(r.policy_sha,policySha);assert.equal(r.launch_enabled,false);assert.ok(requests.every(r=>r.method==='GET'));
+ });
+ test('policy price: invalid or null policy binding rejects before any provider request',async()=>{
+  for(const membershipPolicySha of ['old-policy',null,'']){const {stripe,requests}=priceFixture({}, {membershipPolicySha});await assert.rejects(stripe.readiness(),/MEMBERSHIP_POLICY_MISMATCH/);assert.equal(requests.length,0);}
+ });
+ test('policy price: CAD499 offer and legacy899 cannot substitute for regular799',async()=>{
+  for(const unit_amount of [499,899,0,799.5,'799']){const {stripe}=priceFixture({unit_amount});await assert.rejects(stripe.readiness(),/PRICE_MISMATCH/);}
+ });
+ test('policy price: unspecified or inclusive tax fails closed',async()=>{
+  for(const tax_behavior of [undefined,'unspecified','inclusive']){const {stripe}=priceFixture({tax_behavior});await assert.rejects(stripe.readiness(),/PRICE_POLICY_MISMATCH/);}
+ });
+ test('policy price: unrelated or expanded product cannot substitute for verified EZPep product',async()=>{
+  for(const product of ['prod_other',undefined,{id:'prod_VMXe685VevnLX8'}]){const {stripe}=priceFixture({product});await assert.rejects(stripe.readiness(),/PRICE_POLICY_MISMATCH/);}
+ });
+ test('policy price: wrong currency, inactive, LIVE and nonmonthly price reject',async()=>{
+  for(const bad of [{currency:'usd'},{active:false},{active:1},{livemode:true},{livemode:undefined},{recurring:{interval:'year',interval_count:1}},{recurring:{interval:'month',interval_count:2}}]){
+   const {stripe}=priceFixture(bad);await assert.rejects(stripe.readiness(),/PRICE_MISMATCH/);
+  }
+ });
+ test('policy price: legacy TEST899 fixture still validates without current-policy binding',async()=>{
+  const {stripe}=priceFixture({unit_amount:899,tax_behavior:'unspecified',product:'prod_legacy'},{membershipPolicySha:undefined});const r=await stripe.readiness();assert.equal(r.monthly_cents,899);assert.equal(r.policy_sha,undefined);
+ });
+ test('policy price: LIVE secret rejected without provider requests',async()=>{
+  const {stripe,requests}=priceFixture({}, {secret:'sk_live_synthetic'});await assert.rejects(stripe.readiness(),/STRIPE_TEST_SECRET_REQUIRED/);assert.equal(requests.length,0);
+ });
+ test('policy checkout: current regular price reaches mocked checkout with exact selected price',async()=>{
+  const {stripe,requests}=priceFixture();await stripe.checkout({id:'synthetic_attempt'},'synthetic_user');const post=requests.find(r=>r.path==='/v1/checkout/sessions'),body=new URLSearchParams(post.body);
+  assert.equal(body.get('line_items[0][price]'),'price_synthetic799');assert.equal(body.get('discounts[0][coupon]'),null);assert.equal(body.get('success_url'),'https://app.ezpepplanner.com/#membership');assert.equal(requests.filter(r=>r.method==='POST').length,2);
+ });
+ test('policy checkout: pending promotion or coupon cannot reach customer creation',async()=>{
+  for(const extra of [{promotion:{coupon:'pending'}},{coupon:'pending'}]){const {stripe,requests}=priceFixture();await assert.rejects(stripe.checkout({id:'synthetic_attempt',...extra},'synthetic_user'),/POLICY_PROMOTION_DISABLED/);assert.ok(requests.every(r=>r.method==='GET'));}
+ });
+}
+
 const owner='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
 function setup(who=owner,enabled=false){let stripeCalls=0;const config={testUsers:[owner],testCheckoutEnabled:enabled,publishable:'public',secret:'rk_test_mock'};const store={membership:()=>({pro:false,beta_access:'unchanged',planner_data:'unchanged'})};const f=async(url)=>{if(url.endsWith('/auth/v1/user'))return Response.json({id:who});if(url.endsWith('/rpc/beta_access'))return Response.json(true);stripeCalls++;throw Error('UNEXPECTED_STRIPE_CALL');};return {h:handler(store,config,f),calls:()=>stripeCalls};}
 const req=(op,token='Bearer mock',origin='https://app.ezpepplanner.com')=>new Request('https://builder-pepplan.aurapep.ca/membership/'+op,{method:'POST',headers:{authorization:token,origin,'content-type':'application/json'},body:'{}'});

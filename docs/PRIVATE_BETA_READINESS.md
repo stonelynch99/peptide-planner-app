@@ -1,3 +1,35 @@
+# Current launch gate audit — October 4, 2026 Vancouver
+Owner: Stone Lynch. Cloud-first operations; this checkpoint supersedes historical blocked/publication and older-policy claims below. Protected REVIEW/HANDOFF contain final job receipts.
+
+| Area | Current evidence | Remaining launch gate |
+|---|---|---|
+| Website/app publication infrastructure | Dispatch-only workflow installed; latest deployed source b0b1f68be0bdda1e72e9895e232d90f9c63f8cbc, all 17 live files verified in prior checkpoint | Fresh artifact/rollback checks before each publication |
+| Owner beta members and activity | Published Overview/Members/App usage; 408 regression checks passed | Actual authenticated owner response acceptance; complete membership/paid-tier/Stripe feeds |
+| Membership policy | Central v3 and installed manifest d948915a14f5636cfe720bb24c16e71b5fa438f4b8272963cbfd58a729b5c237 match; enforcement remains off | Client gates and public admission/payment lifecycle; beta unchanged |
+| TEST regular-price adapter | Prepared explicit membershipPolicySha v3 mode accepting only CAD799 monthly exclusive-tax TEST price on prod_VMXe685VevnLX8; 10 new actual-adapter mocks passed | Source validation/landing, reviewed fixed backend installation and dedicated price binding; NOT installed or activated by source push |
+| TEST prices | Fresh read-only verification: both required exclusive-tax799/499 prices absent | Approved additive TEST-price setup; preserve historical899 price/subscriptions |
+| Referral rewards | Two Pro months and influencer80/15 captured draft terms preserved | Qualification/attribution/refund/holding decisions, real credit integration; payouts held |
+| Course flow | Current 15 intro readings/progress published | Later catalog → dedicated course → lessons/back redesign; fuller content and cross-device progress |
+
+## Price-adapter preparation
+The existing unbound TEST899 configuration remains unchanged. An explicit current policy binding is required for the new799 mode. Wrong/null/unknown policy, wrong product/currency/recurrence/amount, LIVE credentials/mode and unspecified/inclusive tax fail closed. Current-policy promotions/coupons are rejected before customer creation; the499 offer remains disabled. Existing legacy snapshots, webhook reconciliation, test subscriptions and historical records are not repriced. No provider object, real checkout, transaction or new backend runtime was created by these isolated mocks.
+Local actual source browser/backend checks:118/118, including10 added adapter checks. Final hosted results belong in REVIEW/HANDOFF.
+
+## Fresh synthetic access journey
+Isolated context868ba4af-25b3-481f-ab11-83a52a7a440e: downgrade preserves both existing plans/history; new activation denied; restore preserves incoming history as inactive; existing history remains writable; deliberate selection retains other plans inactive; unavailable status blocks new activation but retains restore/history; renewal and existing-beta acceptance restore unrestricted new activation. Twelve entitlement checks and23 policy-operation checks pass; zero real identities, emails, transactions or production writes.
+IMPORTANT: older synthetic context/tool status still returns Free learning pending_owner_confirmation and a stale remaining-decision message, although central/installed v3 specifies introductory. Do not treat that stale fixture label as an undecided owner policy or production verification; update fixture tooling later. No live enforcement or admission enabled.
+
+## Work order
+1. Install/bind reviewed current-price TEST adapter only after exact dedicated price verification and backend candidate integrity checks; test complete checkout lifecycle.
+2. Finish authenticated client entitlement gates without overwriting the three pending owner files; safety/help/export/recovery/existing data remain available.
+3. Complete verified membership/revenue feeds and referral credit integration with decisions/holds intact.
+4. Owner-authenticated/phone acceptance and final legal/support/billing controls; staged launch review.
+5. Course navigation redesign remains later as requested.
+
+Beta duration, offer eligibility/cap/deadline and referral holding/refund/payout decisions remain pending. Source preparation does not resolve them. All five activation holds, customer data and beta access preserved.
+
+---
+
 # App tool-discovery milestone — October 4, 2026
 Owner: Stone Lynch. Final validation/release receipts are recorded in protected REVIEW/HANDOFF.
 
