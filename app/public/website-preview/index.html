@@ -184,7 +184,7 @@ function renderDashboard(value){
  const shell=node('div',undefined,'account-shell'),sidebar=node('aside',undefined,'account-sidebar');
  const brand=node('a','EZPep Planner','account-brand');brand.href='https://ezpepplanner.com/';brand.target='_blank';brand.rel='noopener';sidebar.append(brand,node('p',role==='owner'?'Owner workspace':role==='influencer'?'Influencer workspace':'Member workspace','account-workspace'));
  const nav=node('nav');nav.setAttribute('aria-label','Account screens');
- const sections=role==='owner'?[['overview','Overview'],['members','Members'],['revenue','Revenue'],['usage','App usage'],['program','Referral program'],['membership','My membership'],['help','Help'],['partners','Members & partners'],['referrals','All referrals'],['entries','Rewards & commissions'],['payouts','Payout history'],['settings','Program settings'],['terms','Term versions'],['audit','Change history']]:[['overview','Overview'],['membership','Membership'],['help','Help'],['referrals','My referrals'],['entries',role==='member'?'My rewards':'My earnings'],...(role==='member'?[]:[['payouts','Payout history']]),['sharing','Share EZPep'],['policy','My terms']];
+ const sections=role==='owner'?[['overview','Overview'],['members','Members'],['revenue','Revenue'],['usage','App usage'],['program','Referral program'],['membership','My membership'],['help','Help'],['partners','Referral accounts'],['referrals','All referrals'],['entries','Rewards & commissions'],['payouts','Payout history'],['settings','Program settings'],['terms','Term versions'],['audit','Change history']]:[['overview','Overview'],['membership','Membership'],['help','Help'],['referrals','My referrals'],['entries',role==='member'?'My rewards':'My earnings'],...(role==='member'?[]:[['payouts','Payout history']]),['sharing','Share EZPep'],['policy','My terms']];
  if(!sections.some(([key])=>key===accountSection))accountSection='overview';
  for(const [key,label] of sections){const b=button(label,()=>selectSection(key));b.className='account-nav-button';b.setAttribute('aria-current',key===accountSection?'page':'false');nav.append(b);}
  const app=link('Open app ↗','https://app.ezpepplanner.com/');app.target='_blank';app.rel='noopener';sidebar.append(nav,app);
@@ -197,12 +197,13 @@ function renderDashboard(value){
  if(accountSection==='help'){renderHelp(main);return;}
  if(role==='owner'){
   if(['overview','members','revenue','usage'].includes(accountSection)){
-   const descriptions={members:['All memberships','A complete membership directory is not connected yet. Referral profiles are not the full member roster. Free, paid Pro and reward Pro access will be reported separately.'],revenue:['Revenue & subscriptions','Verified Stripe reporting is not connected to this dashboard yet. No revenue or subscription figures are estimated here.'],usage:['App usage','Website usage reporting is not connected yet. Existing aggregate beta analytics remain available inside the app under More → Beta Dashboard.']};
+   const descriptions={members:['All memberships','The beta report appears below. Complete Free, paid Pro and reward Pro plan reporting is not connected yet. Referral profiles are not the full member roster.'],revenue:['Revenue & subscriptions','Verified Stripe reporting is not connected to this dashboard yet. No revenue or subscription figures are estimated here.'],usage:['App usage','Existing beta activity appears below. Full-product and screen-by-screen usage reporting is not connected yet. No new tracking is introduced.']};
    if(accountSection==='overview'){
     const panel=card(main,'Memberships','The whole-app overview is being connected. These figures are unavailable, not zero.');
     const metrics=node('div',undefined,'account-metrics');for(const label of ['Total members','Signups · last 7 days','Monthly recurring revenue'])metric(metrics,label,'Not connected');panel.append(metrics);
     for(const [key,title,copy] of [['members','Members','Free, paid Pro and reward Pro memberships'],['revenue','Revenue','Payments, refunds, fees and bank payouts'],['usage','App usage','Overall activity and feature usage'],['program','Referral program','Member Pro rewards and influencer commissions']]){const area=card(main,title,copy);area.append(button('View '+title.toLowerCase(),()=>selectSection(key)));}
    }else{const [title,copy]=descriptions[accountSection];card(main,title,copy);}
+   if(accountSection!=='revenue'){const beta=card(main,'Beta members & activity');void loadBetaReport(beta,accountSection);}
    return;
   }
   if(accountSection==='settings'){void loadOwner('partners',0,'',true);}
@@ -231,6 +232,60 @@ function renderDashboard(value){
  else if(accountSection==='policy'){const panel=card(main,'Referral terms');termsSummary(panel,v.policy);if(role==='influencer')renderTier(main,v);}
  else {if(accountSection==='entries')counts(main,v.totals,role==='influencer');const panel=card(main,accountSection==='payouts'?'Payout history':accountSection==='entries'?'Reward & commission activity':'Your referrals');void history(panel,accountSection);}
 }
+function betaReportRows(value){
+ if(!Array.isArray(value)||value.length>500)throw Error('INVALID_BETA_REPORT');
+ const ids=new Set(),counts=['events','sessions','screenViews','seconds','onboardingCompleted','planBuilderStarts','plansStarted','imports','feedback'];
+ const stamp=(v,required=false)=>{if(v===null&&!required)return null;if(typeof v!=='string'||v.length>64||!/^\d{4}-\d{2}-\d{2}T/.test(v)||!Number.isFinite(Date.parse(v)))throw Error('INVALID_BETA_REPORT');return v;};
+ return value.map(r=>{
+  if(!r||typeof r!=='object'||! /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(r.userId||'')||ids.has(r.userId.toLowerCase())||typeof r.email!=='string'||r.email.length>254||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email))throw Error('INVALID_BETA_REPORT');
+  ids.add(r.userId.toLowerCase());const row={userId:r.userId,email:r.email,createdAt:stamp(r.createdAt,true),confirmedAt:stamp(r.confirmedAt),lastSignInAt:stamp(r.lastSignInAt),latestActivity:stamp(r.latestActivity)};
+  for(const key of counts){if(!Number.isSafeInteger(r[key])||r[key]<0)throw Error('INVALID_BETA_REPORT');row[key]=r[key];}return row;
+ });
+}
+function betaReportSummary(rows,now=Date.now()){
+ const sum=key=>{const n=rows.reduce((n,r)=>n+r[key],0);if(!Number.isSafeInteger(n))throw Error('INVALID_BETA_REPORT');return n;};
+ return {accounts:rows.length,created7:rows.filter(r=>Date.parse(r.createdAt)>=now-7*86400000&&Date.parse(r.createdAt)<=now).length,confirmed:rows.filter(r=>r.confirmedAt!==null).length,recordedActive:rows.filter(r=>r.latestActivity!==null).length,sessions:sum('sessions'),views:sum('screenViews'),seconds:sum('seconds')};
+}
+function renderBetaMembers(root,rows,offset=0,query=''){
+ root.replaceChildren();heading(root,'Beta account directory','Existing Beta Dashboard records. Beta participation does not require payment; verified Free, paid Pro and reward Pro plan status is not connected here yet.');
+ const search=node('form',undefined,'account-search'),label=node('label','Find an email or account ID'),input=node('input');input.value=query;input.maxLength=80;label.append(input);const submit=node('button','Find','button secondary');submit.type='submit';search.append(label,submit);search.addEventListener('submit',e=>{e.preventDefault();renderBetaMembers(root,rows,0,input.value.trim().slice(0,80));});root.append(search);
+ const filtered=rows.filter(r=>r.email.toLowerCase().includes(query.toLowerCase())||r.userId.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.email.localeCompare(b.email));
+ root.append(node('p',filtered.length+' matching beta accounts · '+rows.length+' in the existing report'));
+ table(root,filtered.slice(offset,offset+25),[['Member',r=>r.email],['Account created',r=>date(r.createdAt)],['Email',r=>r.confirmedAt?'Confirmed':'Not confirmed'],['Access / billing',()=> 'Beta participation · payment not required; paid plan unverified'],['Last sign-in',r=>date(r.lastSignInAt)]],query?'No beta accounts match this search.':'No beta accounts were returned by the existing report.',(cell,row)=>cell.append(button('View activity',()=>renderBetaMember(root,rows,row,offset,query))));
+ if(offset>0)root.append(button('Previous 25',()=>renderBetaMembers(root,rows,Math.max(0,offset-25),query)));
+ if(offset+25<filtered.length)root.append(button('Next 25',()=>renderBetaMembers(root,rows,offset+25,query)));
+ root.append(node('p','This report is not a complete public membership directory. Referral profiles and invitations are separate from membership and billing records.','small'));
+}
+function renderBetaMember(root,rows,row,offset,query){
+ root.replaceChildren();heading(root,row.email,'Read-only beta account activity. No plan, billing or access changes are available here.');
+ root.append(button('Back to beta accounts',()=>renderBetaMembers(root,rows,offset,query)),node('p','Account ID: '+row.userId),node('p','Created: '+date(row.createdAt)+' · Last sign-in: '+date(row.lastSignInAt)));
+ const metrics=node('div',undefined,'account-metrics');for(const [label,key] of [['Recorded sessions','sessions'],['Recorded screen views','screenViews'],['Recorded minutes','seconds'],['Plan starts','plansStarted'],['Imports','imports'],['Feedback submissions','feedback']])metric(metrics,label,key==='seconds'?Math.round(row[key]/60):row[key]);root.append(metrics,node('p','Activity is consent-gated and limited to the existing report. No recorded activity does not mean the app was unused. No peptide, dose, plan contents or notes are displayed.'));
+ root.append(node('p','Paid membership, subscription payments and refunds are not connected to this view.'));
+}
+function renderBetaUsage(root,rows){
+ const summary=betaReportSummary(rows);heading(root,'Recorded beta activity','Aggregated from the existing consent-gated Beta Dashboard report. The report’s own time window applies; this is not all-user or all-time usage.');
+ const metrics=node('div',undefined,'account-metrics');for(const [label,val] of [['Beta accounts with recorded activity',summary.recordedActive],['Recorded sessions',summary.sessions],['Recorded screen views',summary.views],['Recorded minutes',Math.round(summary.seconds/60)]])metric(metrics,label,val);root.append(metrics);
+ const leaders=rows.filter(r=>r.seconds>0||r.sessions>0).sort((a,b)=>b.seconds-a.seconds||b.sessions-a.sessions||a.email.localeCompare(b.email)).slice(0,10);
+ table(root,leaders,[['Beta account',r=>r.email],['Recorded minutes',r=>Math.round(r.seconds/60)],['Sessions',r=>r.sessions],['Last recorded activity',r=>date(r.latestActivity)]],'No activity was returned by this report. This does not establish that members did not use the app.');
+ root.append(node('p','Only members who consented contribute recorded activity. Screen-by-screen reporting and paid membership reporting are not connected; no additional tracking is introduced.'));
+}
+async function loadBetaReport(root,section){
+ const epoch=generation,requestId=++ownerLoad,identity=session?.userId;
+ const current=()=>epoch===generation&&requestId===ownerLoad&&identity===session?.userId&&accountView?.account.role==='owner'&&accountSection===section;
+ root.replaceChildren();heading(root,'Loading beta report','Reading existing protected account and activity records…');
+ try{
+  if(accountView?.account.role!=='owner'||!config||config.project!==PROJECT||!session)throw Error('OWNER_REQUIRED');
+  const token=await access();if(!current())return;
+  const rpc=async name=>fetchJson(PROJECT+'/rest/v1/rpc/'+name,{method:'POST',headers:{authorization:'Bearer '+token,apikey:config.publishable,'content-type':'application/json'},body:'{}'},epoch);
+  if(await rpc('beta_admin_access')!==true)throw Error('OWNER_REQUIRED');if(!current())return;
+  const rows=betaReportRows(await rpc('beta_admin_dashboard'));const summary=betaReportSummary(rows);if(!current())return;
+  root.replaceChildren();root.append(node('p','Loaded '+new Date().toLocaleTimeString()+' · Existing Beta Dashboard source','small'));
+  if(section==='members'){const directory=node('div');root.append(directory);renderBetaMembers(directory,rows);}
+  else if(section==='usage')renderBetaUsage(root,rows);
+  else{heading(root,'Beta accounts','The existing beta report is connected. Complete membership and revenue reporting are still being prepared.');const metrics=node('div',undefined,'account-metrics');metric(metrics,'Beta accounts in report',summary.accounts);metric(metrics,'Beta accounts created · last 7 days',summary.created7);metric(metrics,'Confirmed email accounts',summary.confirmed);root.append(metrics,button('View beta members',()=>selectSection('members')),button('View recorded app usage',()=>selectSection('usage')));}
+ }catch(error){if(!current())return;root.replaceChildren();heading(root,'Beta report unavailable','No member count or usage figures are estimated. Your account, beta access and saved data are unchanged.');root.append(button('Retry beta report',()=>void loadBetaReport(root,section)));}
+}
+
 function renderMembership(root){
  const panel=card(root,'Your membership','Your existing beta account remains available.');
  panel.append(node('span','Private beta access verified','account-badge'),node('p','Paid membership enrollment is not open. This page does not change your planner access or charge your account.'));

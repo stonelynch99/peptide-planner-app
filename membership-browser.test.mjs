@@ -253,7 +253,7 @@ function setup(fetcher){
  for(const key of ['account-owner','account-editor','account-message','account-dashboard','account-login','account-email','account-password','account-connect','account-intro']){const e=new Element();e.id=key;elements.set(key,e);body.append(e);}
  const get=k=>elements.get(k);const submit=new Element('button');submit.type='submit';get('account-login').append(submit);
  const document={body,getElementById:k=>body.walk().find(e=>e.id===k)||null,createElement:tag=>new Element(tag)};const location={hash:''},windowListeners={};
- const source=fs.readFileSync(new URL('./app/public/website-preview/index.html', import.meta.url),'utf8').match(/\/\/ EZPEP_ACCOUNT_CLIENT_START[\s\S]*?\/\/ EZPEP_ACCOUNT_CLIENT_END/)[0].replace('// No URL token injection, planner storage access or public sign-up.',`globalThis.harness={renderDashboard,selectSection,editTerms,reset,setSession:s=>session=s,setDirty:v=>draftDirty=v,setRevision:v=>ownerRevision=v,history,holdView,portalRoute,connect,loadOwner};`);
+ const source=fs.readFileSync(new URL('./app/public/website-preview/index.html', import.meta.url),'utf8').match(/\/\/ EZPEP_ACCOUNT_CLIENT_START[\s\S]*?\/\/ EZPEP_ACCOUNT_CLIENT_END/)[0].replace('// No URL token injection, planner storage access or public sign-up.',`globalThis.harness={renderDashboard,selectSection,editTerms,reset,setConfig:v=>config=v,betaReportRows,betaReportSummary,setSession:s=>session=s,setDirty:v=>draftDirty=v,setRevision:v=>ownerRevision=v,history,holdView,portalRoute,connect,loadOwner};`);
  const requests=[];
  const ctx={document,location,window:{addEventListener:(name,fn)=>windowListeners[name]=fn,history:{replaceState:(_,__,hash)=>location.hash=hash}},navigator:{clipboard:{writeText:async()=>{}}},AbortController,setTimeout,clearTimeout,Intl,Number,Math,Date,Set,WeakMap,fetch:async(url,options)=>{requests.push({url,options});if(fetcher)return fetcher(url,options);let section=JSON.parse(options.body).section;return {ok:true,json:async()=>({...view('owner'),section,revision:1,rows:[],partnerCount:0,pagination:{total:0,offset:0,nextOffset:null}})}}};
  vm.runInNewContext(source,ctx);ctx.harness.setSession({userId:id,accessToken:'synthetic',expiresAt:Date.now()+3600000});return {...ctx,elements,get,requests,body,windowListeners};
@@ -308,6 +308,53 @@ test('owner app home and reporting do not equate referral profiles with members 
  assert.equal(c.requests.length,0);
  c.harness.selectSection('program');await tick();assert.match(c.requests.at(-1).url,/owner\/view$/);
 });
+const betaConfig={project:'https://csolruvoeukctlybiemd.supabase.co',publishable:'sb_publishable_synthetic'};
+const betaRow=(overrides={})=>({userId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',email:'beta@example.invalid',createdAt:new Date(Date.now()-86400000).toISOString(),confirmedAt:new Date().toISOString(),lastSignInAt:null,latestActivity:null,events:0,sessions:0,screenViews:0,seconds:0,onboardingCompleted:0,planBuilderStarts:0,plansStarted:0,imports:0,feedback:0,...overrides});
+function betaSetup(rows=[betaRow()],extra){const c=setup(async(url,options)=>{if(extra){const r=await extra(url,options);if(r)return r;}return {ok:true,json:async()=>url.endsWith('/beta_admin_access')?true:rows};});c.harness.setConfig(betaConfig);return c;}
+const settleBeta=async()=>{for(let i=0;i<4;i++)await tick();};
+test('beta website overview uses existing protected RPCs and never counts referral profiles as members',async()=>{
+ const c=betaSetup();c.harness.renderDashboard(view('owner'));await settleBeta();const text=c.get('account-dashboard').textContent;
+ assert.match(text,/Beta accounts in report 1/);assert.match(text,/Beta accounts created · last 7 days 1/);assert.match(text,/Total members Not connected/);assert.match(text,/Monthly recurring revenue Not connected/);
+ assert.deepEqual(c.requests.map(r=>r.url),['https://csolruvoeukctlybiemd.supabase.co/rest/v1/rpc/beta_admin_access','https://csolruvoeukctlybiemd.supabase.co/rest/v1/rpc/beta_admin_dashboard']);
+ for(const r of c.requests){assert.equal(r.options.method,'POST');assert.equal(r.options.body,'{}');assert.equal(r.options.headers.authorization,'Bearer synthetic');assert.equal(r.options.cache,'no-store');}
+});
+test('beta members distinguish unpaid beta participation from unverified paid plan and support activity drilldown',async()=>{
+ const c=betaSetup([betaRow({sessions:3,seconds:300,screenViews:8})]);c.harness.renderDashboard(view('owner'));await settleBeta();c.harness.selectSection('members');await settleBeta();
+ let root=c.get('account-dashboard');assert.match(root.textContent,/beta@example.invalid/);assert.match(root.textContent,/payment not required; paid plan unverified/);assert.doesNotMatch(root.textContent,/Paid Pro 1/);
+ root.walk().find(e=>e.tagName==='button'&&e.textContent==='View activity').listeners.click();assert.match(root.textContent,/Recorded sessions 3/);assert.match(root.textContent,/Recorded minutes 5/);assert.match(root.textContent,/No peptide, dose, plan contents or notes/);
+ root.walk().find(e=>e.tagName==='button'&&e.textContent==='Back to beta accounts').listeners.click();assert.match(root.textContent,/Beta account directory/);assert.equal(c.location.hash,'#account/members');
+});
+test('beta directory searches literal email text and paginates without database mutations',async()=>{
+ const rows=Array.from({length:30},(_,i)=>betaRow({userId:i.toString(16).padStart(8,'0')+'-aaaa-4aaa-8aaa-aaaaaaaaaaaa',email:'user_'+i+'@example.invalid'})),c=betaSetup(rows);c.harness.renderDashboard(view('owner'));await settleBeta();c.harness.selectSection('members');await settleBeta();
+ const root=c.get('account-dashboard'),before=c.requests.length;assert.equal(root.walk().filter(e=>e.tagName==='button'&&e.textContent==='View activity').length,25);
+ root.walk().find(e=>e.tagName==='button'&&e.textContent==='Next 25').listeners.click();assert.equal(root.walk().filter(e=>e.tagName==='button'&&e.textContent==='View activity').length,5);
+ const form=root.walk().find(e=>e.tagName==='form');form.walk().find(e=>e.tagName==='input').value='USER_2@';form.listeners.submit({preventDefault(){}});assert.match(root.textContent,/1 matching beta accounts/);assert.match(root.textContent,/user_2@example.invalid/);assert.equal(c.requests.length,before);
+});
+test('beta usage aggregates only reported consent-gated counters, leaves revenue unconnected',async()=>{
+ const c=betaSetup([betaRow({sessions:2,screenViews:4,seconds:180,latestActivity:new Date().toISOString()}),betaRow({userId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',email:'second@example.invalid',sessions:5,screenViews:6,seconds:120})]);c.harness.renderDashboard(view('owner'));await settleBeta();c.harness.selectSection('usage');await settleBeta();const root=c.get('account-dashboard');assert.match(root.textContent,/Recorded sessions 7/);assert.match(root.textContent,/Recorded screen views 10/);assert.match(root.textContent,/Recorded minutes 5/);assert.match(root.textContent,/not all-user or all-time usage/);assert.match(root.textContent,/Only members who consented/);
+ c.harness.selectSection('revenue');await settleBeta();assert.match(root.textContent,/not connected/);assert.doesNotMatch(root.textContent,/second@example.invalid/);
+});
+test('beta report denial prevents roster RPC and leaves unavailable, never zero',async()=>{
+ const c=betaSetup([],async url=>url.endsWith('/beta_admin_access')?{ok:true,json:async()=>false}:null);c.harness.renderDashboard(view('owner'));await settleBeta();assert.equal(c.requests.length,1);assert.match(c.get('account-dashboard').textContent,/Beta report unavailable/);assert.doesNotMatch(c.get('account-dashboard').textContent,/Beta accounts in report 0/);
+});
+test('beta report rejects malformed, duplicate, oversized or unsafe numeric snapshots atomically',()=>{
+ const c=setup();for(const rows of [[betaRow({userId:'bad'})],[betaRow(),betaRow()],[betaRow({sessions:-1})],[betaRow({seconds:Number.MAX_SAFE_INTEGER+1})],[betaRow({createdAt:'not-a-date'})],[betaRow({email:'no address'})],Array.from({length:501},()=>betaRow())])assert.throws(()=>c.harness.betaReportRows(rows),/INVALID_BETA_REPORT/);
+ assert.throws(()=>c.harness.betaReportSummary([betaRow({seconds:Number.MAX_SAFE_INTEGER}),betaRow({seconds:1})]),/INVALID_BETA_REPORT/);
+ const summary=c.harness.betaReportSummary([betaRow({createdAt:new Date(Date.now()+86400000).toISOString()})]);assert.equal(summary.created7,0);
+});
+test('beta report empty snapshot is a reported zero, failed fetch remains unavailable',async()=>{
+ const c=betaSetup([]);c.harness.renderDashboard(view('owner'));await settleBeta();assert.match(c.get('account-dashboard').textContent,/Beta accounts in report 0/);
+ const bad=betaSetup([],async url=>url.endsWith('/beta_admin_dashboard')?{ok:false,json:async()=>({code:'42501'})}:null);bad.harness.renderDashboard(view('owner'));await settleBeta();assert.match(bad.get('account-dashboard').textContent,/Beta report unavailable/);assert.doesNotMatch(bad.get('account-dashboard').textContent,/Beta accounts in report 0/);
+});
+test('beta report late response cannot populate a new screen or revoked role',async()=>{
+ let resolve;const c=betaSetup([],async url=>url.endsWith('/beta_admin_dashboard')?await new Promise(r=>resolve=r):null);c.harness.renderDashboard(view('owner'));await settleBeta();c.harness.selectSection('revenue');resolve({ok:true,json:async()=>[betaRow()]});await settleBeta();assert.doesNotMatch(c.get('account-dashboard').textContent,/beta@example.invalid|Beta accounts in report/);
+ let second;const d=betaSetup([],async url=>url.endsWith('/beta_admin_dashboard')?await new Promise(r=>second=r):null);d.harness.renderDashboard(view('owner'));await settleBeta();d.harness.renderDashboard(view('member'));second({ok:true,json:async()=>[betaRow()]});await settleBeta();assert.doesNotMatch(d.get('account-dashboard').textContent,/beta@example.invalid|Beta accounts in report/);
+});
+test('beta member and influencer dashboards never request owner roster RPCs',async()=>{for(const role of ['member','influencer']){const c=betaSetup();c.harness.renderDashboard(view(role));await settleBeta();assert.ok(c.requests.every(r=>!r.url.includes('/rpc/beta_admin_')));assert.doesNotMatch(c.get('account-dashboard').textContent,/Beta account directory/);}});
+test('beta report failure retry clears old rows and signout discards pending identity',async()=>{
+ let fail=false;const c=betaSetup([betaRow()],async url=>fail&&url.endsWith('/beta_admin_dashboard')?{ok:false,json:async()=>({error:'REQUEST_FAILED'})}:null);c.harness.renderDashboard(view('owner'));await settleBeta();fail=true;c.harness.selectSection('members');await settleBeta();assert.doesNotMatch(c.get('account-dashboard').textContent,/beta@example.invalid/);fail=false;c.get('account-dashboard').walk().find(e=>e.textContent==='Retry beta report').listeners.click();await settleBeta();assert.match(c.get('account-dashboard').textContent,/beta@example.invalid/);c.harness.reset('Signed out');assert.doesNotMatch(c.body.textContent,/beta@example.invalid/);
+});
+
 test('member terms describe free Pro access without influencer commissions',async()=>{
  const c=setup();const v=view();v.policy={scope:'global',version:1,terms:{rewardMonths:2,recurringBps:1500,tiers:[{through:null,firstMonthBps:3000}]}};
  c.harness.renderDashboard(v);c.harness.selectSection('policy');await tick();

@@ -314,3 +314,14 @@ Official references: [database functions](https://supabase.com/docs/guides/datab
 - CAD799 existing TEST price has unspecified tax treatment; CAD499 exclusive TEST price missing. Additive exclusive-tax configuration only is prepared; checkout and offers remain disabled; historical899 preserved.
 - Existing beta, all saved data, ownership/revision checks and launch holds preserved. Offer capacity/eligibility/deadline, beta duration and referral/payout terms remain undecided.
 - Exact evidence, tool contracts, backups and next Cloud checks: current protected REVIEW.md/HANDOFF.md.
+
+## Owner members milestone — October 4, 2026 Vancouver
+- [x] Implemented website owner Overview / Members / App usage connection to the SAME existing authenticated `beta_admin_access` and `beta_admin_dashboard` RPCs already used by the app. No new SQL, roster endpoint, database permissions, tracking or billing operation.
+- [x] Searchable beta account directory (25 rows per page), account-created/email confirmation/last sign-in fields, beta participation label with paid plan unverified, read-only individual recorded activity and aggregate recorded sessions/views/minutes.
+- [x] Beta counts are explicitly counts in the existing Beta Dashboard report, never claimed as complete public membership totals. Paid Free/Pro/reward-Pro and revenue feeds remain unconnected. Activity is consent-gated; the existing report's time window applies; no recorded activity is not proof of no usage.
+- [x] Ten new actual production-script DOM/authentication-response checks; 108 isolated account tests passed locally before hosted validation. Owner gate, invalid/duplicate/oversized responses, stale navigation/role/identity, failed/empty responses, literal search, pagination, no writes and role separation covered.
+- [ ] Hosted build / final source tests / publication / authenticated owner live acceptance. Final evidence belongs in protected REVIEW/HANDOFF; preparation checkboxes do not prove live status.
+- [ ] LATER course flow redesign (owner says lower priority): course catalog → selected course page with only that course's lesson sections, clear back to catalog, retained progress / Continue learning. Remove competing expanded courses and separate Quick Start; preserve current saved progress. No course flow change in this milestone.
+- [ ] Complete overall membership roster and verified plan/billing source across beta/free/paid/reward access. Beta complimentary access must not be conflated with the limited Free plan or revoked.
+- [ ] Consent-respecting per-area analytics and full membership/revenue reporting; no fabricated zero financial figures.
+- [ ] Exclusive-tax TEST prices and final launch decisions remain open. All signup/billing/referral/promotion/payout holds, beta access, unsynced customer data and three pending owner files retained.
