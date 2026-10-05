@@ -210,6 +210,28 @@ test('remaining MT-I, 5-Amino-1MQ, NAD+ and MOTS-c references preserve route and
   const text=n=>typeof n==='string'||typeof n==='number'?String(n):n?.children?.map(text).join('')||'';
   return {nodes,updates,writes,text,allText:text(root),button:label=>nodes.find(n=>n.type==='Pressable'&&n.props.accessibilityLabel===label)};
  }
+ test('course pages: catalog shows three course cards without any open lesson',()=>{
+  const f=courseView();for(const title of ['EZPep Foundations','Planning Fundamentals','Research Literacy'])assert.ok(f.button('Open course: '+title));
+  assert.equal(f.button('Back to courses'),undefined);assert.doesNotMatch(f.allText,/Peptides are chains of amino acids|Today shows events to log/);assert.deepEqual(f.writes,[]);
+ });
+ test('course pages: selected reading excludes every other course and catalog summary',()=>{
+  const f=courseView({open:'planning',lesson:2});
+  assert.ok(f.button('Back to courses'));assert.match(f.allText,/Concentration comes from vial strength/);
+  assert.doesNotMatch(f.allText,/EZPep Foundations|Research Literacy|Your learning paths|3 courses|15 lessons|Your progress/);
+  assert.equal(f.nodes.some(n=>typeof n.type==='function'&&n.type.name==='QuickStart'),false);assert.deepEqual(f.writes,[]);
+ });
+ test('course pages: returning to catalog never modifies saved completion',()=>{
+  const f=courseView({completed:{foundations:[0,1],planning:[],research:[]},open:'foundations',lesson:1});
+  f.button('Back to courses').props.onPress();assert.deepEqual(f.updates,[[0,null],[1,null]]);assert.deepEqual(f.writes,[]);
+  const restored=courseView({completed:{foundations:[0,1],planning:[],research:[]}});
+  assert.match(restored.allText,/2 of 15 lessons completed/);assert.ok(restored.button('Continue EZPep Foundations'));
+ });
+ test('course pages: lesson contents stays inside selected course',()=>{
+  const f=courseView({open:'research',lesson:null});
+  assert.equal(f.nodes.filter(n=>/^Open lesson /.test(n.props.accessibilityLabel||'')).length,5);
+  assert.match(f.allText,/Human versus preclinical evidence/);assert.doesNotMatch(f.allText,/Individual vials versus kits|EZPep Foundations/);
+  f.button('Open lesson 1: Human versus preclinical evidence').props.onPress();assert.deepEqual(f.updates,[[1,0]]);assert.deepEqual(f.writes,[]);
+ });
  test('learning flow: overall resume opens first unfinished lesson without changing stored progress',()=>{
   const f=courseView({completed:{foundations:[0,2],planning:[],research:[]}});
   const bar=f.nodes.find(n=>n.props.accessibilityLabel==='Overall introductory learning completion');
@@ -220,11 +242,11 @@ test('remaining MT-I, 5-Amino-1MQ, NAD+ and MOTS-c references preserve route and
  test('learning flow: completed course offers next unfinished path and review remains available',()=>{
   const f=courseView({completed:{foundations:[0,1,2,3,4],planning:[0],research:[]},open:'foundations',lesson:4});
   f.button('Continue to Planning Fundamentals').props.onPress();
-  assert.deepEqual(f.updates,[[0,'planning'],[1,1]]);assert.ok(f.button('Review EZPep Foundations'));assert.deepEqual(f.writes,[]);
+  assert.deepEqual(f.updates,[[0,'planning'],[1,1]]);assert.ok(f.button('Course lessons: EZPep Foundations'));assert.deepEqual(f.writes,[]);
  });
  test('learning flow: all fifteen complete has no false next lesson',()=>{
   const f=courseView({completed:{foundations:[0,1,2,3,4],planning:[0,1,2,3,4],research:[0,1,2,3,4]},open:'research',lesson:4});
-  assert.match(f.allText,/All introductory lessons completed/);
+  assert.match(f.allText,/All five lessons completed/);
   assert.equal(f.nodes.filter(n=>/^Continue learning:|^Continue to /.test(n.props.accessibilityLabel||'')).length,0);
  });
  test('learning flow: last lesson cannot falsely complete an unfinished course',()=>{

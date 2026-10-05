@@ -159,6 +159,7 @@ export default function App() {
   const openSettings=(section:typeof settingsSection='home')=>{setSettingsSection(section);setScreen('settings');};
   const [schoolSection,setSchoolSection] = useState<"library"|"courses"|"facts"|"community">("library");
   const [courseWrites,setCourseWrites]=useState(0);
+  const schoolScroll=useRef<ScrollView>(null);
   const [schoolFilter,setSchoolFilter] = useState<"all"|"favorites"|"human"|"preclinical"|"blends">("all");
   const [schoolFavorites,setSchoolFavorites] = useState<string[]>([]);
   const [feedbackType,setFeedbackType]=useState<'Bug'|'Confusing'|'Suggestion'|'Calculation concern'>('Bug');
@@ -442,7 +443,7 @@ export default function App() {
   };
 
   const renderSchool = () => (
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={schoolScroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View accessibilityRole="tablist" style={styles.schoolTabs}>
           <Pressable accessibilityRole="tab" accessibilityState={{selected:schoolSection==="library"}} onPress={()=>setSchoolSection("library")} style={[styles.schoolTab,schoolSection==="library"&&styles.schoolTabActive]}><Text numberOfLines={1} style={[styles.schoolTabText,schoolSection==="library"&&styles.schoolTabTextActive]}>Library</Text></Pressable>
           <Pressable accessibilityRole="tab" accessibilityState={{selected:schoolSection==="courses"}} onPress={()=>setSchoolSection("courses")} style={[styles.schoolTab,schoolSection==="courses"&&styles.schoolTabActive]}><Text numberOfLines={1} style={[styles.schoolTabText,schoolSection==="courses"&&styles.schoolTabTextActive]}>Courses</Text></Pressable>
@@ -477,11 +478,7 @@ export default function App() {
           {!schoolResults.length && <Text style={styles.emptyText}>{schoolFilter==="favorites"?"Star a School profile to keep it here.":"No matches. Try another name, alias or filter."}</Text>}
         </>}
 
-        {schoolSection==="courses"&&<>
-          <View style={styles.schoolSectionIntro}><Text style={styles.kicker}>GUIDED LEARNING</Text><Text style={styles.sectionTitle}>Courses</Text><Text style={styles.helper}>Follow a short path when you want more structure. Only the course you open expands.</Text></View>
-          <QuickStart/>
-          <LearningPaths progressOwner={betaAccount.state.status==='eligible'?betaAccount.state.userId:null} onProgressWrite={delta=>setCourseWrites(n=>Math.max(0,n+delta))}/>
-        </>}
+        {schoolSection==="courses"&&<LearningPaths progressOwner={betaAccount.state.status==='eligible'?betaAccount.state.userId:null} onProgressWrite={delta=>setCourseWrites(n=>Math.max(0,n+delta))} onReadingChange={()=>schoolScroll.current?.scrollTo({y:0,animated:false})}/>} 
 
         {schoolSection==="facts"&&<>
           <View style={styles.schoolSectionIntro}><Text style={styles.kicker}>QUICK FACTS</Text><Text style={styles.sectionTitle}>Answers without the course</Text><Text style={styles.helper}>Search practical app concepts, terminology and research-literacy fundamentals.</Text></View>

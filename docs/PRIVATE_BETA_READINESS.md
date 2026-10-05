@@ -1,3 +1,12 @@
+# Course navigation milestone — October 5, 2026 UTC
+Implemented for validation: Learn → Courses opens a catalog with overall progress, Quick Start and three course cards. Opening a course replaces that catalog with only its own lessons and progress. Back to courses returns to the catalog without saving or resetting progress; All lessons stays within the selected course. Changing course or lesson returns the Learn scroll view to the top. Existing account-scoped device progress, save-failure recovery and stale-account/navigation guards remain unchanged. The content remains fifteen introductory readings, not an expanded curriculum or cross-device progress service.
+
+Four actual component regressions added for catalog-only content, selected-course isolation, back navigation without writes, and scoped lesson contents. Two older expectations updated because global course summary/review actions now live on the catalog. Hosted tests and publication receipts must be verified before this is called live.
+
+Owner navigation from the preceding milestone is now LIVE: commit1e966780f0d3220f510ab12a0e9816aacd60077e; all449 full tests passed, TypeScript/export and412/1366 startup passed. GitHub deployment37268359467 verified, exact published HTMLfe19f1129d160a8c979bdeadd8a713f99b14a30565cb8d6c8c720ebcd1a31f18 and CSSfd2d9b516f12f0c83d996f1a4c4fc75b83940787ae3e7ab207b055042bf905eb. Owner account path https://app.ezpepplanner.com/website-preview/#account/overview . Actual owner-authenticated visual/phone acceptance remains separate from DOM regressions and verified deployment.
+
+Main-site diagnostic and marketing projection review both return MAIN_SITE_REGULAR_FILE_REQUIRED; exact filesystem reason is not exposed. No marketing guard changed or homepage publication attempted. Preserve source guards and repair the fixed loader diagnostically rather than bypassing it. Portal publication succeeded independently. All launch holds and pending files remain preserved.
+
 # Owner portal navigation milestone — October 5, 2026 UTC
 Cloud-first development. Publication and complete test receipts belong in protected REVIEW/HANDOFF; this source entry does not claim deployment.
 

@@ -68,7 +68,7 @@ export default function QuickStart(){
  </Card>;
 }
 
-export function LearningPaths({progressOwner=null,onProgressWrite}:{progressOwner?:string|null;onProgressWrite?:(delta:1|-1)=>void}){
+export function LearningPaths({progressOwner=null,onProgressWrite,onReadingChange}:{progressOwner?:string|null;onProgressWrite?:(delta:1|-1)=>void;onReadingChange?:()=>void}){
  const paths=COURSE_PATHS;
  const [open,setOpen]=useState<string|null>(null),[lesson,setLesson]=useState<number|null>(null);
  const [progress,setProgress]=useState<CourseProgress|null>(null),[ready,setReady]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
@@ -76,6 +76,7 @@ export function LearningPaths({progressOwner=null,onProgressWrite}:{progressOwne
  const scope=courseProgressScope(progressOwner),visible=progress?.scope===scope?progress:null;
  const summary=ready&&visible?courseLearningSummary(visible):null;
  const reading=useRef({open,lesson});reading.current={open,lesson};
+ useEffect(()=>{onReadingChange?.();},[open,lesson]);
  useEffect(()=>{
   const active=createCourseProgressSession(plannerStorage,progressOwner);session.current=active;
   setProgress(null);setReady(false);setBusy(false);setMessage('');setOpen(null);setLesson(null);
@@ -101,6 +102,8 @@ export function LearningPaths({progressOwner=null,onProgressWrite}:{progressOwne
  research:['Read the evidence class alongside the finding. Human research and preclinical work answer different questions; a promising laboratory result does not establish a personal clinical outcome.','Ask who was studied, which formulation was used and how it was given. Results from one population or route may not answer a question about another.','Read the study limitations together with its findings. Keep the source link available so you can check what was actually measured, rather than relying only on a short summary.','Be cautious when a claim goes beyond its cited evidence. Research-practice references are separately labelled and are not established clinical recommendations.','Conflicting or negative evidence belongs in the review too. Keep uncertainty visible and avoid presenting one source as a settled conclusion.']
  };
  return <View style={s.paths}>
+  {open!==null&&<Pressable accessibilityRole="button" accessibilityLabel="Back to courses" onPress={()=>{setOpen(null);setLesson(null);}} style={s.courseAction}><Text style={u.link}>‹ Back to courses</Text></Pressable>}
+  {open===null&&<>
   <View style={s.pathHeader}><View><Text style={s.eyebrow}>LEARN EZPEP</Text><Text style={s.pathTitle}>Your learning paths</Text></View><Text style={s.courseCount}>3 courses · 15 lessons</Text></View>
   <Text style={u.body}>Learn one idea at a time. Start with Foundations, then explore planning and research.</Text>
   <Text style={u.small}>Introductory courses are available in the current beta. Completion is saved on this device for this account; it does not sync to other devices yet.</Text>
@@ -110,20 +113,22 @@ export function LearningPaths({progressOwner=null,onProgressWrite}:{progressOwne
    <View accessibilityRole="progressbar" accessibilityLabel="Overall introductory learning completion" accessibilityValue={{min:0,max:summary.total,now:summary.completed}} style={s.progress}><View style={[s.progressFill,{width:(summary.completed/summary.total*100)+'%' as `${number}%`} ]}/></View>
    {summary.next?<><Text style={[u.small,{marginTop:10}]}>Up next: {summary.next.courseTitle} · {summary.next.lessonTitle}</Text><Pressable accessibilityRole="button" accessibilityLabel={(summary.completed?'Continue learning: ':'Start learning: ')+summary.next.lessonTitle} disabled={busy} accessibilityState={{disabled:busy}} onPress={()=>{if(summary.next){setOpen(summary.next.courseId);setLesson(summary.next.lessonIndex);}}} style={s.courseAction}><Text style={u.link}>{summary.completed?'Continue learning →':'Start learning →'}</Text></Pressable></>:<Text accessibilityLiveRegion="polite" style={[u.body,{marginTop:10}]}>All introductory lessons completed. Your courses remain available to review.</Text>}
   </View>}
+  <QuickStart/>
+  </>}
   {!ready&&!message&&<Text accessibilityLiveRegion="polite" style={u.small}>Loading learning progress…</Text>}
   {!!message&&<Text accessibilityLiveRegion="polite" style={[u.small,{marginVertical:8}]}>{message}</Text>}
   {!ready&&!!message&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{void retryProgress();}} style={s.courseAction}><Text style={u.link}>{busy?'Trying again…':'Retry loading progress'}</Text></Pressable>}
-  {paths.map(path=>{
+  {paths.filter(path=>open===null||path.id===open).map(path=>{
    const expanded=open===path.id,completed=visible?.completed[path.id]??[],count=completed.length,allDone=count===path.lessons.length;
    const nextIndex=path.lessons.findIndex((_,index)=>!completed.includes(index));
    return <View key={path.id} style={s.course}>
-    <Pressable accessibilityRole="button" accessibilityLabel={path.title} accessibilityState={{expanded}} onPress={()=>{setOpen(expanded?null:path.id);setLesson(null);}} style={s.courseTop}>
+    <Pressable accessibilityRole="button" accessibilityLabel={(expanded?'Course lessons: ':'Open course: ')+path.title} onPress={()=>{setOpen(path.id);setLesson(null);}} style={s.courseTop}>
      <View style={{flex:1}}><Text style={s.tag}>{path.tag}</Text><Text style={s.courseTitle}>{path.title}</Text><Text style={s.courseSummary}>{path.summary}</Text>
       <Text style={s.progressText}>{ready&&visible?(allDone?'Course completed':count+' of '+path.lessons.length+' lessons completed'):path.lessons.length+' introductory lessons'}</Text>
       {ready&&visible&&<View accessibilityRole="progressbar" accessibilityLabel={path.title+' completion'} accessibilityValue={{min:0,max:path.lessons.length,now:count}} style={s.progress}><View style={[s.progressFill,{width:(count/path.lessons.length*100)+'%' as `${number}%`} ]}/></View>}
-     </View><Text style={s.chevron}>{expanded?'−':'+'}</Text>
+     </View>{!expanded&&<Text style={s.chevron}>›</Text>}
     </Pressable>
-    <View style={{paddingHorizontal:14,paddingBottom:12}}><Pressable accessibilityRole="button" accessibilityLabel={(allDone?'Review ':count?'Continue ':'Start ')+path.title} onPress={()=>{setOpen(path.id);setLesson(nextIndex<0?0:nextIndex);}} style={s.courseAction}><Text style={u.link}>{allDone?'Review course':count?'Continue learning →':'Start course →'}</Text></Pressable></View>
+    {!expanded&&<View style={{paddingHorizontal:14,paddingBottom:12}}><Pressable accessibilityRole="button" accessibilityLabel={(allDone?'Review ':count?'Continue ':'Start ')+path.title} onPress={()=>{setOpen(path.id);setLesson(nextIndex<0?0:nextIndex);}} style={s.courseAction}><Text style={u.link}>{allDone?'Review course':count?'Continue learning →':'Start course →'}</Text></Pressable></View>}
     {expanded&&<View style={s.lessons}>
      {lesson===null?<>{path.lessons.map((title,index)=><Pressable key={title} accessibilityRole="button" accessibilityLabel={'Open lesson '+(index+1)+': '+title+(completed.includes(index)?', completed':'')} onPress={()=>setLesson(index)} style={[s.lesson,{minHeight:48}]}><View style={s.lessonNumber}><Text style={s.lessonNumberText}>{completed.includes(index)?'✓':index+1}</Text></View><Text style={s.lessonText}>{title}</Text></Pressable>)}</>:<View style={s.reader}>
       <Pressable accessibilityRole="button" onPress={()=>setLesson(null)} style={s.courseAction}><Text style={u.link}>‹ All lessons</Text></Pressable>
