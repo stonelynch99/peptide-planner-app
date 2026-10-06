@@ -492,6 +492,7 @@ export default function App() {
 
         {schoolSection==="facts"&&<>
           <View style={styles.schoolSectionIntro}><Text style={styles.kicker}>QUICK FACTS</Text><Text style={styles.sectionTitle}>Answers without the course</Text><Text style={styles.helper}>Search practical app concepts, terminology and research-literacy fundamentals.</Text></View>
+          <QuickStart/>
           <SchoolBasics/>
         </>}
 
