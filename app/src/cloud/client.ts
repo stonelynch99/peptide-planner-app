@@ -110,16 +110,25 @@ export async function uploadInitialPlannerCopy(payload:string,expectedUserId:str
 export async function saveCloudPlannerSnapshot(payload:string,expectedRevision:number,expectedUserId:string){
  return new MembershipPlannerClient(membershipGateway).save(expectedUserId,payload,expectedRevision);
 }
-export async function exportOwnAccount(){
-  await eligibleUser();
+async function privacyAccount(expectedUserId:string){
+ const user=await requireAccount();
+ if(user.id!==expectedUserId)throw Error('Account changed. Open your account again.');
+ return user.id;
+}
+export async function exportOwnAccount(expectedUserId:string){
+  await privacyAccount(expectedUserId);
   const {data,error}=await configured().rpc('export_own_account');
   if(error)throw Error('Account export is unavailable. Your data is unchanged.');
+  if(await plannerAccountId()!==expectedUserId)throw Error('Account changed. The export was discarded.');
   return data;
 }
-export async function setDeletionRequest(cancel:boolean){
-  await eligibleUser();
-  const {error}=await configured().rpc('set_deletion_request',{cancel_request:cancel});
+export async function setDeletionRequest(cancel:boolean,expectedUserId:string){
+  await privacyAccount(expectedUserId);
+  const {data,error}=await configured().rpc('set_deletion_request',{cancel_request:cancel});
   if(error)throw Error('The request could not be saved. No data was deleted.');
+  if(await plannerAccountId()!==expectedUserId)throw Error('Account changed. Refresh the original account to check the request.');
+  if(!['pending','cancelled','processed'].includes(data as string))throw Error('Request status could not be verified. Refresh before retrying.');
+  return data as 'pending'|'cancelled'|'processed';
 }
 
 
