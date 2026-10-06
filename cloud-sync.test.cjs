@@ -133,7 +133,7 @@ test('app account bridge fixes destinations without transporting account credent
  const vm=require('node:vm'),ts=require('./app/node_modules/typescript');
  function appAccountFixture({swap=false,reject=false}={}){
   let checks=0,calls=[];const fake={auth:{getUser:async()=>({data:{user:{id:swap&&++checks>1?'changed':'member'}}}),getSession:async()=>({data:{session:{user:{id:'member'},access_token:'synthetic-token'}}})},rpc:async()=>({data:true})};
-  const sandbox={module:{exports:{}},exports:null,process:{env:{}},fetch:async(url,options)=>{calls.push({url,options});return {ok:!reject,json:async()=>heldReferral()};},AbortSignal,URL,require:name=>name==='@supabase/supabase-js'?{createClient:()=>fake}:name==='./config'?{validateCloudConfig:()=>({status:'ready',url:'https://example.invalid',key:'public'})}:name==='./contracts'?accountContracts:{}};
+  const sandbox={module:{exports:{}},exports:null,process:{env:{}},fetch:async(url,options)=>{calls.push({url,options});return {ok:!reject,json:async()=>heldReferral()};},AbortSignal,URL,require:name=>name==='@supabase/supabase-js'?{createClient:()=>fake}:name==='./config'?{validateCloudConfig:()=>({status:'ready',url:'https://example.invalid',key:'public'})}:name==='./membership-access'?require('./app/src/cloud/membership-access.ts'):name==='./contracts'?accountContracts:{}};
   sandbox.exports=sandbox.module.exports;
   vm.runInNewContext(ts.transpileModule(fs.readFileSync('app/src/cloud/client.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,sandbox);
   return {calls,read:sandbox.module.exports.readReferralSummary};
