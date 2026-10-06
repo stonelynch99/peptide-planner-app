@@ -1,4 +1,5 @@
 import {ATTACHMENT_BUCKET,submitRecoverableFeedback,feedbackDeadline,type Screenshot} from './feedback-attachments';
+import {MembershipGateway} from './membership-access';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {createClient} from '@supabase/supabase-js';
 import {validateCloudConfig} from './config';
@@ -215,3 +216,18 @@ export async function callMembership(expectedUserId:string,operation:'status'|'c
  if(!response.ok)throw Error(result.error==='BILLING_DISABLED'?'Owner test checkout is disabled.':result.error==='TEST_ACCOUNT_REQUIRED'?'This account is not enabled for subscription testing.':'Membership request could not finish. Refresh status before retrying.');
  return result;
 }
+
+export const membershipGateway=new MembershipGateway({
+ async accountId(){
+  const {data,error}=await configured().auth.getUser();
+  if(error||!data.user)throw Error('Sign in to verify membership.');
+  return data.user.id;
+ },
+ async rpc(name,args){
+  if(!['membership_access_status_v2','membership_planner_read_v2','membership_select_peptide_v2','membership_planner_write_v2'].includes(name))throw Error('Membership operation unavailable.');
+  const {data,error}=await (configured() as any).rpc(name,args);
+  if(error)throw Error(error.code==='40001'?'Planner or membership changed on another device. Refresh before trying again.':'Membership could not be verified. Your saved data is unchanged.');
+  return data;
+ }
+});
+
