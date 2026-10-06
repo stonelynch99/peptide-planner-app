@@ -211,7 +211,7 @@ test('remaining MT-I, 5-Amino-1MQ, NAD+ and MOTS-c references preserve route and
   return {nodes,updates,writes,text,allText:text(root),button:label=>nodes.find(n=>n.type==='Pressable'&&n.props.accessibilityLabel===label)};
  }
  test('course pages: catalog shows three course cards without any open lesson',()=>{
-  const f=courseView();for(const title of ['EZPep Foundations','Planning Fundamentals','Research Literacy'])assert.ok(f.button('Open course: '+title));
+  const f=courseView();for(const title of ['EZPep Foundations','Planning Fundamentals','Research Literacy']){const start=f.button('Start '+title);assert.ok(start);assert.equal(f.button('Open course: '+title),undefined);};
   assert.equal(f.button('Back to courses'),undefined);assert.doesNotMatch(f.allText,/Peptides are chains of amino acids|Today shows events to log/);assert.deepEqual(f.writes,[]);
  });
  test('course pages: selected reading excludes every other course and catalog summary',()=>{
@@ -242,7 +242,7 @@ test('remaining MT-I, 5-Amino-1MQ, NAD+ and MOTS-c references preserve route and
  test('learning flow: completed course offers next unfinished path and review remains available',()=>{
   const f=courseView({completed:{foundations:[0,1,2,3,4],planning:[0],research:[]},open:'foundations',lesson:4});
   f.button('Continue to Planning Fundamentals').props.onPress();
-  assert.deepEqual(f.updates,[[0,'planning'],[1,1]]);assert.ok(f.button('Course lessons: EZPep Foundations'));assert.deepEqual(f.writes,[]);
+  assert.deepEqual(f.updates,[[0,'planning'],[1,1]]);assert.match(f.allText,/EZPep Foundations/);assert.ok(f.nodes.find(n=>n.type==='Pressable'&&f.text(n)==='‹ All lessons'));assert.equal(f.button('Course lessons: EZPep Foundations'),undefined);assert.deepEqual(f.writes,[]);
  });
  test('learning flow: all fifteen complete has no false next lesson',()=>{
   const f=courseView({completed:{foundations:[0,1,2,3,4],planning:[0,1,2,3,4],research:[0,1,2,3,4]},open:'research',lesson:4});
