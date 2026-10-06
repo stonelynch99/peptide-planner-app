@@ -42,7 +42,7 @@ export interface SyncPort{
 async function recheck(review:SyncReview,port:SyncPort){
   if(await port.userId()!==review.userId)throw Error('The signed-in account changed. Refresh synchronization.');
   const latest=await port.read();
-  if(!latest||latest.user_id!==review.userId||latest.revision!==review.cloudRevision)throw Error('Cloud data changed on another device. Refresh before choosing which copy to keep.');
+  if(!latest||latest.user_id!==review.userId||latest.revision!==review.cloudRevision||normalized(latest.snapshot)!==review.cloudPayload)throw Error('Cloud data changed on another device. Refresh before choosing which copy to keep.');
 }
 export async function uploadReviewed(review:SyncReview,current:()=>Store,confirmed:boolean,port:SyncPort){
   if(confirmed!==true)throw Error('Confirm the cloud update first.');
@@ -56,10 +56,12 @@ export async function uploadReviewed(review:SyncReview,current:()=>Store,confirm
 export async function downloadReviewed(review:SyncReview,current:()=>Store,confirmed:boolean,port:SyncPort){
   if(confirmed!==true)throw Error('Confirm the cloud download first.');
   const before=normalized(encodeCompactPlannerStore(current()));
+  if(before!==review.localPayload)throw Error('Local data changed. Review synchronization again.');
   await recheck(review,port);
   await port.backup(before);
   if(normalized(encodeCompactPlannerStore(current()))!==before)throw Error('Local data changed. Your safety copy is preserved.');
   await recheck(review,port);
+  if(normalized(encodeCompactPlannerStore(current()))!==before)throw Error('Local data changed. Your safety copy is preserved.');
   await port.apply(decodeCompactPlannerStore(review.cloudPayload));
 }
 

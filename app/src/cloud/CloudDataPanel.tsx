@@ -4,7 +4,7 @@ import {plannerStorage as AsyncStorage} from '../store';
 import type {Store} from '../engine';
 import {decodePlannerStore,encodePlannerStore} from '../persistence-v04';
 import {confirmMigration,reviewMigration,type MigrationReview} from './planner-migration';
-import {dailySyncSchedule,decideAutomaticSync,downloadReviewed,reviewSync,uploadReviewed,type AutomaticSyncBaseline,type SyncReview} from './planner-sync';
+import {dailySyncSchedule,decideAutomaticSync,downloadReviewed,plannerSyncPayload,reviewSync,uploadReviewed,type AutomaticSyncBaseline,type SyncReview} from './planner-sync';
 import {plannerAccountId,exportOwnAccount,readCloudPlannerSnapshot,saveCloudPlannerSnapshot,setDeletionRequest,uploadInitialPlannerCopy} from './client';
 import {saveLocalSafetyCopy} from './local-backup';
 import {requireSyncBinding} from './sync-binding';
@@ -81,6 +81,7 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
     const verifiedReview=reviewSync(userId,current.current,verified);
     if(verifiedReview.cloudPayload!==review.cloudPayload)throw Error('Cloud data changed again. Review sync before continuing.');
     active();
+    if(encodePlannerStore(current.current)!==localPayload)throw Error('Local data changed during synchronization. Review sync before continuing.');
     await replace.current(decodePlannerStore(review.cloudPayload));
     active();
     await saveAutomaticBaseline(userId,{revision:row.revision,payload:review.cloudPayload});
@@ -144,6 +145,7 @@ export function CloudDataPanel({store,ready,userId,replaceStore,guided=false,onC
     requireSyncBinding(userId,panelBinding.current,panelMounted.current);
     if(await plannerAccountId()!==userId)throw Error('Account changed. The cloud copy was not applied.');
     requireSyncBinding(userId,panelBinding.current,panelMounted.current);
+    if(!syncReview||plannerSyncPayload(current.current)!==syncReview.localPayload)throw Error('Local data changed. Review synchronization again.');
     await replaceStore(next);
    },
  });

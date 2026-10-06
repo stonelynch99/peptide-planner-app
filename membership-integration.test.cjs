@@ -8,7 +8,7 @@ const {MembershipGateway,membershipChangeError,effectiveTrackingStore}=require('
 const {MembershipPlannerClient,membershipPlannerRow}=require('./app/src/cloud/membership-planner.ts');
 const {MembershipSession}=require('./app/src/cloud/membership-session.ts');
 const {requireSyncBinding}=require('./app/src/cloud/sync-binding.ts');
-const {reviewSync,decideAutomaticSync,plannerSyncPayload}=require('./app/src/cloud/planner-sync.ts');
+const {reviewSync,decideAutomaticSync,plannerSyncPayload,downloadReviewed}=require('./app/src/cloud/planner-sync.ts');
 const evidence=(tier='free',selected='a',basis=tier==='pro'?'paid':'free')=>({status:'verified',tier,basis,betaExpiresAt:null,accessVersion:'v2',selectionRevision:2,selectedCompoundId:selected,tracking:{limit:tier==='pro'?null:1,requiresSelection:tier==='free'&&selected===null},learning:tier==='pro'?'full':'introductory',receipt:'12345678-1234-1234-1234-123456789abc',verifiedAt:new Date(Date.now()-1000).toISOString(),validUntil:new Date(Date.now()+60000).toISOString(),preserveAllData:true});
 const payload=()=>encodeCompactPlannerStore({...blankStore(),activePlans:[]});
 function gatewayFixture({access=evidence(),read=null,write=null,statusFailure=false,writeFailure=false,switchOn=null}={}){
@@ -60,7 +60,7 @@ test('actual setup action: changed selection prevents notification request and s
 test('Free tracking: same ID schedule or reminder edits cannot bypass selected compound',()=>{const p=activate(draft()),before={...blankStore(),activePlans:[p],active:p};for(const change of [{defaultSchedule:{...p.defaultSchedule,times:['10:00']}},{waterMl:'2'},{reminderOffsetMinutes:60}]){const after={...before,activePlans:[{...p,...change}]};assert.ok(membershipChangeError(before,after,evidence('free','b')));}});
 test('downgrade and recovery: projected pauses never enter the durable payload',()=>{const first=activate(draft()),second={...activate(draft()),id:'second',compoundId:'b'},s={...blankStore(),activePlans:[first,second],active:first},before=encodeCompactPlannerStore(s);const projected=effectiveTrackingStore(s,evidence());assert.ok(projected.activePlans[1].pausedAt);assert.equal(encodeCompactPlannerStore(s),before);assert.ok(!s.activePlans[1].pausedAt);});
 test('sync binding: switched, signed-out and unmounted response cannot reach local apply',()=>{for(const [binding,mounted]of [[{eligible:true,userId:'two'},true],[{eligible:false,userId:'one'},true],[{eligible:true,userId:'one'},false]])assert.throws(()=>requireSyncBinding('one',binding,mounted),/discarded/);});
-test('actual automatic sync: account switch while cloud verification waits cannot apply old data',async()=>{
+for(const race of ['account switch','local edit'])test('actual automatic sync: '+race+' while cloud verification waits preserves local data',async()=>{
  const source=fs.readFileSync('app/src/cloud/CloudDataPanel.tsx','utf8'),start=source.indexOf(' const syncNow=useCallback'),end=source.indexOf(' },[eligible,userId,ready,saving]);',start)+' },[eligible,userId,ready,saving]);'.length;
  const local={...blankStore(),activePlans:[]},cloud={...local,draft:draft()},row={user_id:'one',schema_version:4,revision:2,snapshot:JSON.parse(encodeCompactPlannerStore(cloud)),updated_at:'2026-10-06T16:00:00Z'};
  let finish,signal;const secondRead=new Promise(resolve=>signal=resolve),wait=new Promise(resolve=>finish=resolve),states=[],applied=[];let reads=0;
@@ -69,7 +69,26 @@ test('actual automatic sync: account switch while cloud verification waits canno
  encodePlannerStore,decodePlannerStore,readAutomaticBaseline:raw=>JSON.parse(raw),reviewSync,decideAutomaticSync,saveAutomaticBaseline:async()=>{},saveLocalSafetyCopy:async()=>{},
  readCloudPlannerSnapshot:async()=>{if(++reads===1)return row;signal();return wait;},saveCloudPlannerSnapshot:async()=>{throw Error('Unexpected upload');}};
  vm.runInNewContext(ts.transpileModule(source.slice(start,end)+';globalThis.run=syncNow;',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
- const job=context.run(true);await secondRead;context.binding.current={eligible:true,userId:'two'};const beforeStates=states.length;finish(row);await job;assert.equal(applied.length,0);assert.equal(states.length,beforeStates);assert.equal(context.current.current,local);
+ const job=context.run(true);await secondRead;const edited={...local,draft:{...draft(),compoundName:'Edited during verification'}};
+ if(race==='account switch')context.binding.current={eligible:true,userId:'two'};else context.current.current=edited;
+ const beforeStates=states.length;finish(row);await job;assert.equal(applied.length,0);
+ if(race==='account switch'){assert.equal(states.length,beforeStates);assert.equal(context.current.current,local);}else{assert.equal(states.at(-1).kind,'needsAttention');assert.equal(context.current.current,edited);}
+});
+
+test('reviewed download: edit during final cloud read preserves newest device copy and safety backup',async()=>{
+ let current={...blankStore(),activePlans:[]},reads=0,applied=0,backups=0;
+ const row={user_id:'one',schema_version:4,revision:2,snapshot:JSON.parse(encodeCompactPlannerStore({...current,draft:draft()})),updated_at:'2026-10-06T16:00:00Z'},review=reviewSync('one',current,row);
+ const newer={...current,draft:{...draft(),compoundName:'Newer device edit'}};
+ await assert.rejects(downloadReviewed(review,()=>current,true,{userId:async()=>'one',read:async()=>{if(++reads===2)current=newer;return row;},backup:async()=>backups++,apply:async()=>applied++}),/Local data changed/);
+ assert.equal(current,newer);assert.equal(applied,0);assert.equal(backups,1);
+});
+test('reviewed download: changed device before confirmation requires a fresh review',async()=>{
+ const local={...blankStore(),activePlans:[]},row={user_id:'one',schema_version:4,revision:2,snapshot:JSON.parse(encodeCompactPlannerStore(local)),updated_at:'2026-10-06T16:00:00Z'},review=reviewSync('one',local,row);let calls=0;
+ await assert.rejects(downloadReviewed(review,()=>({...local,draft:draft()}),true,{userId:async()=>{calls++;return 'one';},read:async()=>row,backup:async()=>calls++,apply:async()=>calls++}),/Local data changed/);assert.equal(calls,0);
+});
+test('reviewed download: changed cloud payload with unchanged revision never applies stale snapshot',async()=>{
+ const local={...blankStore(),activePlans:[]},row={user_id:'one',schema_version:4,revision:2,snapshot:JSON.parse(encodeCompactPlannerStore(local)),updated_at:'2026-10-06T16:00:00Z'},review=reviewSync('one',local,row);let applied=0;
+ await assert.rejects(downloadReviewed(review,()=>local,true,{userId:async()=>'one',read:async()=>({...row,snapshot:JSON.parse(encodeCompactPlannerStore({...local,draft:draft()}))}),backup:async()=>{},apply:async()=>applied++}),/Cloud data changed/);assert.equal(applied,0);
 });
 
 function clientFixture({admitted=true,statusError=null,swap=false}={}){
