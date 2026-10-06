@@ -126,7 +126,9 @@ function adapterHarness({url='https://app.ezpepplanner.com/',valid=true,eligible
  onAuthStateChange:cb=>{callback=cb;return {data:{subscription:{unsubscribe(){}}}}},
  updateUser:async()=>{updates++;return {}},signOut:async()=>{session=null;return {}}
  }};
- const context=vm.createContext({configured:()=>api,URL,URLSearchParams,Date,setTimeout,window:{location:{href:url},history:{replaceState(){}}}});
+ // This sliced recovery fixture supplies the separately tested membership boundary.
+ const membershipGateway={status:async id=>{const checked=await api.auth.getUser();if(!eligible||checked.data.user?.id!==id)throw Error('Account unavailable');return {};}};
+ const context=vm.createContext({configured:()=>api,membershipGateway,URL,URLSearchParams,Date,setTimeout,window:{location:{href:url},history:{replaceState(){}}}});
  vm.runInContext(stripTypeScriptTypes(block,{mode:'transform'})+';globalThis.port=authPort;',context);
  context.port.subscribe(()=>{});
  return {port:context.port,updates:()=>updates,exchanges:()=>exchanges};
