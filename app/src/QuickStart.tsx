@@ -122,25 +122,25 @@ export function LearningPaths({progressOwner=null,onProgressWrite,onReadingChang
    const expanded=open===path.id,completed=visible?.completed[path.id]??[],count=completed.length,allDone=count===path.lessons.length;
    const nextIndex=path.lessons.findIndex((_,index)=>!completed.includes(index));
    return <View key={path.id} style={s.course}>
-    <Pressable accessibilityRole="button" accessibilityLabel={(expanded?'Course lessons: ':'Open course: ')+path.title} onPress={()=>{setOpen(path.id);setLesson(null);}} style={s.courseTop}>
-     <View style={{flex:1}}><Text style={s.tag}>{path.tag}</Text><Text style={s.courseTitle}>{path.title}</Text><Text style={s.courseSummary}>{path.summary}</Text>
+    <View style={s.courseTop}>
+     <View style={{flex:1}}><Text style={s.tag}>{path.tag}</Text><Text style={s.courseTitle}>{path.title}</Text>{!expanded&&<Text style={s.courseSummary}>{path.summary}</Text>}
       <Text style={s.progressText}>{ready&&visible?(allDone?'Course completed':count+' of '+path.lessons.length+' lessons completed'):path.lessons.length+' introductory lessons'}</Text>
       {ready&&visible&&<View accessibilityRole="progressbar" accessibilityLabel={path.title+' completion'} accessibilityValue={{min:0,max:path.lessons.length,now:count}} style={s.progress}><View style={[s.progressFill,{width:(count/path.lessons.length*100)+'%' as `${number}%`} ]}/></View>}
-     </View>{!expanded&&<Text style={s.chevron}>›</Text>}
-    </Pressable>
+     </View>
+    </View>
     {!expanded&&<View style={{paddingHorizontal:14,paddingBottom:12}}><Pressable accessibilityRole="button" accessibilityLabel={(allDone?'Review ':count?'Continue ':'Start ')+path.title} onPress={()=>{setOpen(path.id);setLesson(nextIndex<0?0:nextIndex);}} style={s.courseAction}><Text style={u.link}>{allDone?'Review course':count?'Continue learning →':'Start course →'}</Text></Pressable></View>}
     {expanded&&<View style={s.lessons}>
      {lesson===null?<>{path.lessons.map((title,index)=><Pressable key={title} accessibilityRole="button" accessibilityLabel={'Open lesson '+(index+1)+': '+title+(completed.includes(index)?', completed':'')} onPress={()=>setLesson(index)} style={[s.lesson,{minHeight:48}]}><View style={s.lessonNumber}><Text style={s.lessonNumberText}>{completed.includes(index)?'✓':index+1}</Text></View><Text style={s.lessonText}>{title}</Text></Pressable>)}</>:<View style={s.reader}>
       <Pressable accessibilityRole="button" onPress={()=>setLesson(null)} style={s.courseAction}><Text style={u.link}>‹ All lessons</Text></Pressable>
       <Text style={s.tag}>LESSON {lesson+1} OF {path.lessons.length}{completed.includes(lesson)?' · COMPLETED':''}</Text>
       <Text style={[u.heading,{marginTop:8}]}>{path.lessons[lesson]}</Text><Text style={[u.body,{lineHeight:24,marginTop:8}]}>{bodies[path.id][lesson]}</Text>
-      <Text style={[u.small,{marginTop:14}]}>Before continuing, think about how this concept appears in Learn, Build Plan or Today. Completing a lesson records your reading progress; it does not change any plan.</Text>
+      <Text style={[u.small,{marginTop:14}]}>Completing a lesson saves your reading progress without changing your plans.</Text>
       {ready&&visible&&!completed.includes(lesson)&&<Pressable accessibilityRole="button" disabled={busy} accessibilityState={{disabled:busy}} onPress={()=>{void finishLesson(path.id,lesson);}} style={[s.completeAction,busy&&{opacity:.6}]}><Text style={{color:'#fff',fontWeight:'800'}}>{busy?'Saving completion…':count===path.lessons.length-1?'Complete course':lesson<path.lessons.length-1?'Complete & next lesson →':'Complete lesson'}</Text></Pressable>}
       {allDone&&<Text accessibilityLiveRegion="polite" style={[u.body,{color:'#178066',marginTop:12}]}>All five lessons completed. You can revisit any lesson whenever you need it.</Text>}
       {allDone&&summary?.next&&<Pressable accessibilityRole="button" accessibilityLabel={'Continue to '+summary.next.courseTitle} disabled={busy} accessibilityState={{disabled:busy}} onPress={()=>{if(summary.next){setOpen(summary.next.courseId);setLesson(summary.next.lessonIndex);}}} style={s.courseAction}><Text style={u.link}>Continue to {summary.next.courseTitle} →</Text></Pressable>}
       <View style={{flexDirection:'row',flexWrap:'wrap',gap:16,marginTop:12}}>
        {lesson>0&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>setLesson(lesson-1)} style={s.courseAction}><Text style={u.link}>Previous lesson</Text></Pressable>}
-       {lesson<path.lessons.length-1&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>setLesson(lesson+1)} style={s.courseAction}><Text style={u.link}>Next lesson →</Text></Pressable>}
+       {completed.includes(lesson)&&lesson<path.lessons.length-1&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>setLesson(lesson+1)} style={s.courseAction}><Text style={u.link}>Next lesson →</Text></Pressable>}
       </View>
      </View>}
      <Text style={s.coming}>Educational app and research-literacy lessons. No personalized treatment recommendations.</Text>
