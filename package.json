@@ -3,7 +3,7 @@
   "version": "0.4.0",
   "private": true,
   "scripts": {
-    "test": "node --test engine033.test.cjs setup033.test.cjs calculation032.test.cjs native-time031.test.cjs reminders03.test.cjs notification-capability03.test.cjs multiplan04.test.cjs multiplan-migration04.test.cjs ui04.test.cjs integration04.test.cjs review04.test.cjs school-profile04.test.cjs tracker-polish04.test.cjs active-edit04.test.cjs event-undo04.test.cjs density04.test.cjs persistence-upgrade04.test.cjs duration04.test.cjs maintenance04.test.cjs supabase-foundation.test.cjs cloud-data-controls.test.cjs cloud-sync.test.cjs feedback-resend.test.mjs reminder-integration.test.cjs quiet-release.test.cjs membership-browser.test.mjs",
+    "test": "node --test engine033.test.cjs setup033.test.cjs calculation032.test.cjs native-time031.test.cjs reminders03.test.cjs notification-capability03.test.cjs multiplan04.test.cjs multiplan-migration04.test.cjs ui04.test.cjs integration04.test.cjs review04.test.cjs school-profile04.test.cjs tracker-polish04.test.cjs active-edit04.test.cjs event-undo04.test.cjs density04.test.cjs persistence-upgrade04.test.cjs duration04.test.cjs maintenance04.test.cjs supabase-foundation.test.cjs cloud-data-controls.test.cjs cloud-sync.test.cjs feedback-resend.test.mjs reminder-integration.test.cjs quiet-release.test.cjs membership-browser.test.mjs membership-access.test.cjs",
     "test:ui": "node ui033.test.cjs",
     "test:integration-ui": "node integration-ui04.cjs",
     "test:refinement-ui": "node refinement-ui04.cjs",
