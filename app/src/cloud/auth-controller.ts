@@ -12,7 +12,7 @@ export class AuthController {
     // Same-account reauthentication must not unmount password forms or erase their result.
     if (!session || session.userId !== this.assessedUserId) this.publish({status:'loading'});
     try {
-      const allowed = session ? await this.port.eligible() : false;
+      const allowed = session ? await this.port.eligible(session.userId) : false;
       if (!this.stopped && generation === this.generation) { this.assessedUserId=allowed&&session?session.userId:null; this.publish(session ? {status:allowed?'eligible':'denied',...session} : {status:'signedOut'}); }
     } catch { if (!this.stopped && generation === this.generation) this.publish({status:'error'}); }
   }

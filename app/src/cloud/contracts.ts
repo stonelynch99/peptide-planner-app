@@ -10,7 +10,7 @@ export interface AuthPort {
   requestRecovery?(email: string): Promise<void>;
   updatePassword?(password: string): Promise<void>;
   updateDisplayName?(name: string): Promise<void>;
-  eligible(): Promise<boolean>;
+  eligible(expectedUserId?: string): Promise<boolean>;
   signOut(): Promise<void>;
   subscribe(listener: (session: SessionIdentity) => void): () => void;
 }

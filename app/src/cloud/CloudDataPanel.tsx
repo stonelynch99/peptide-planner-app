@@ -5,8 +5,9 @@ import type {Store} from '../engine';
 import {decodePlannerStore,encodePlannerStore} from '../persistence-v04';
 import {confirmMigration,reviewMigration,type MigrationReview} from './planner-migration';
 import {dailySyncSchedule,decideAutomaticSync,downloadReviewed,reviewSync,uploadReviewed,type AutomaticSyncBaseline,type SyncReview} from './planner-sync';
-import {eligibleUser,exportOwnAccount,readCloudPlannerSnapshot,saveCloudPlannerSnapshot,setDeletionRequest,uploadInitialPlannerCopy} from './client';
+import {plannerAccountId,exportOwnAccount,readCloudPlannerSnapshot,saveCloudPlannerSnapshot,setDeletionRequest,uploadInitialPlannerCopy} from './client';
 import {saveLocalSafetyCopy} from './local-backup';
+import {requireSyncBinding} from './sync-binding';
 
 export type AutomaticCloudSyncState={
  kind:'local'|'checking'|'syncing'|'upToDate'|'setup'|'needsAttention'|'retry';
@@ -27,13 +28,17 @@ async function saveAutomaticBaseline(userId:string,baseline:AutomaticSyncBaselin
 export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replaceStore,onNeedsAttention}:{eligible:boolean;userId:string|null;store:Store;ready:boolean;saving:boolean;replaceStore:(next:Store)=>Promise<void>;onNeedsAttention:()=>void;}){
  const [state,setState]=useState<AutomaticCloudSyncState>(initialAutomaticState);
  const current=useRef(store),replace=useRef(replaceStore),attention=useRef(onNeedsAttention),busy=useRef(false),mounted=useRef(true);
+ const binding=useRef({eligible,userId});binding.current={eligible,userId};
  current.current=store;replace.current=replaceStore;attention.current=onNeedsAttention;
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
  const set=(next:AutomaticCloudSyncState)=>{if(mounted.current)setState(next);};
  const syncNow=useCallback(async(force=false)=>{
   if(!eligible||!userId||!ready||saving||busy.current)return;
   busy.current=true;
+  const active=()=>requireSyncBinding(userId,binding.current,mounted.current);
+  const setBound=(next:AutomaticCloudSyncState)=>{try{active();set(next);}catch{}};
   try{
+   active();
    const now=new Date();
    if(!force){
     const attemptedRaw=await AsyncStorage.getItem(automaticAttemptKey(userId));
@@ -41,45 +46,50 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
     if(attempted&&!Number.isNaN(attempted.getTime())&&now.getTime()-attempted.getTime()<retryDelayMs&&now.getTime()>=attempted.getTime())return;
    }
    await AsyncStorage.setItem(automaticAttemptKey(userId),now.toISOString());
-   set({kind:'checking',label:'Checking cloud…',detail:'Comparing this device with your private cloud copy.'});
-   const localPayload=encodePlannerStore(current.current),row=await readCloudPlannerSnapshot();
-   if(!row){set({kind:'setup',label:'Set up cloud sync',detail:'Create the first cloud copy before automatic sync begins.'});return;}
+   setBound({kind:'checking',label:'Checking cloud…',detail:'Comparing this device with your private cloud copy.'});
+   const localPayload=encodePlannerStore(current.current),row=await readCloudPlannerSnapshot(userId);
+   if(!row){setBound({kind:'setup',label:'Set up cloud sync',detail:'Create the first cloud copy before automatic sync begins.'});return;}
+   active();
    const review=reviewSync(userId,current.current,row);
    const baseline=readAutomaticBaseline(await AsyncStorage.getItem(automaticBaselineKey(userId)));
    const decision=decideAutomaticSync(review.localPayload,review.cloudPayload,row.revision,baseline);
    if(decision==='bind'){
     await saveAutomaticBaseline(userId,{revision:row.revision,payload:review.cloudPayload});
     await AsyncStorage.setItem(automaticSuccessKey(userId),new Date().toISOString());
-    set({kind:'upToDate',label:'Cloud up to date',detail:'This device matches cloud revision '+row.revision+'.'});return;
+    setBound({kind:'upToDate',label:'Cloud up to date',detail:'This device matches cloud revision '+row.revision+'.'});return;
    }
    if(decision==='attention'){
-    set({kind:'needsAttention',label:'Sync needs attention',detail:'Both copies may contain changes. Review them before choosing which planner to keep.'});return;
+    setBound({kind:'needsAttention',label:'Sync needs attention',detail:'Both copies may contain changes. Review them before choosing which planner to keep.'});return;
    }
-   set({kind:'syncing',label:'Syncing…',detail:decision==='upload'?'Saving this device’s newer changes to the cloud.':'Loading newer cloud changes on this device.'});
+   setBound({kind:'syncing',label:'Syncing…',detail:decision==='upload'?'Saving this device’s newer changes to the cloud.':'Loading newer cloud changes on this device.'});
+   active();
    await saveLocalSafetyCopy(localPayload,'auto-sync-backup');
+   active();
    if(encodePlannerStore(current.current)!==localPayload)throw Error('Local data changed during synchronization. Try again.');
    if(decision==='upload'){
     const revision=await saveCloudPlannerSnapshot(review.localPayload,row.revision,userId);
-    const verified=await readCloudPlannerSnapshot();
+    const verified=await readCloudPlannerSnapshot(userId);
     if(!verified||verified.revision!==revision)throw Error('Cloud update could not be verified.');
     const verifiedReview=reviewSync(userId,current.current,verified);
     if(verifiedReview.localPayload!==verifiedReview.cloudPayload)throw Error('Cloud update could not be verified.');
     await saveAutomaticBaseline(userId,{revision,payload:verifiedReview.cloudPayload});
     await AsyncStorage.setItem(automaticSuccessKey(userId),new Date().toISOString());
-    set({kind:'upToDate',label:'Cloud up to date',detail:'Your changes are available on your other signed-in devices.'});
+    setBound({kind:'upToDate',label:'Cloud up to date',detail:'Your changes are available on your other signed-in devices.'});
    }else{
-    const verified=await readCloudPlannerSnapshot();
+    const verified=await readCloudPlannerSnapshot(userId);
     if(!verified||verified.revision!==row.revision)throw Error('Cloud data changed again. Review sync before continuing.');
     const verifiedReview=reviewSync(userId,current.current,verified);
     if(verifiedReview.cloudPayload!==review.cloudPayload)throw Error('Cloud data changed again. Review sync before continuing.');
+    active();
     await replace.current(decodePlannerStore(review.cloudPayload));
+    active();
     await saveAutomaticBaseline(userId,{revision:row.revision,payload:review.cloudPayload});
     await AsyncStorage.setItem(automaticSuccessKey(userId),new Date().toISOString());
-    set({kind:'upToDate',label:'Cloud up to date',detail:'Newer changes from another device are now on this device.'});
+    setBound({kind:'upToDate',label:'Cloud up to date',detail:'Newer changes from another device are now on this device.'});
    }
   }catch(error){
    const detail=String(error).replace(/^Error:\s*/,'');
-   set(/changed|review|account/i.test(detail)?{kind:'needsAttention',label:'Sync needs attention',detail}:{kind:'retry',label:'Sync paused',detail:'Your device copy is safe. '+detail});
+   setBound(/changed|review|account/i.test(detail)?{kind:'needsAttention',label:'Sync needs attention',detail}:{kind:'retry',label:'Sync paused',detail:'Your device copy is safe. '+detail});
   }finally{busy.current=false;}
  },[eligible,userId,ready,saving]);
  useEffect(()=>{
@@ -102,7 +112,7 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
   const subscription=AppState.addEventListener('change',next=>{if(next==='active')void schedule();});
   return()=>{cancelled=true;if(timer)clearTimeout(timer);clearInterval(interval);subscription.remove();};
  },[eligible,userId,ready,saving,syncNow]);
- useEffect(()=>{if(!eligible)setState(initialAutomaticState);},[eligible,userId]);
+ useEffect(()=>{setState(initialAutomaticState);},[eligible,userId]);
  const activate=()=>state.kind==='needsAttention'||state.kind==='setup'?attention.current():void syncNow(true);
  return {state,syncNow,activate};
 }
@@ -110,12 +120,14 @@ export function useAutomaticCloudSync({eligible,userId,store,ready,saving,replac
 export function CloudDataPanel({store,ready,userId,replaceStore,guided=false,onCloudChanged}:{store:Store;ready:boolean;userId:string;replaceStore:(next:Store)=>Promise<void>;guided?:boolean;onCloudChanged?:()=>void}){
  const [review,setReview]=useState<MigrationReview|null>(null),[syncReview,setSyncReview]=useState<SyncReview|null>(null),[confirmed,setConfirmed]=useState(false),[pendingDirection,setPendingDirection]=useState<'download'|'upload'|null>(null),[showAdvanced,setShowAdvanced]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const current=useRef(store);current.current=store;
+ const panelBinding=useRef({eligible:true,userId}),panelMounted=useRef(true);panelBinding.current={eligible:true,userId};
+ useEffect(()=>{panelMounted.current=true;return()=>{panelMounted.current=false;};},[]);
  useEffect(()=>{setReview(null);setSyncReview(null);setConfirmed(false);setPendingDirection(null);setShowAdvanced(false);setMessage('');},[userId]);
  const run=async(action:()=>Promise<string>)=>{if(busy)return;setBusy(true);try{setMessage(await action());}catch(error){setMessage(error instanceof Error?error.message:'The action could not finish. Your local data is unchanged.');}finally{setBusy(false);}};
  const backup=saveLocalSafetyCopy;
  const dateLabel=(value:string|null)=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'No recorded activity';
  const refreshSync=async()=>{
-   const row=await readCloudPlannerSnapshot();
+   const row=await readCloudPlannerSnapshot(userId);
    setReview(null);setConfirmed(false);setPendingDirection(null);setShowAdvanced(false);
    if(!row){setSyncReview(null);return 'No cloud planner exists yet. Review an initial cloud copy to begin.';}
    const next=reviewSync(userId,current.current,row);setSyncReview(next);
@@ -124,11 +136,16 @@ export function CloudDataPanel({store,ready,userId,replaceStore,guided=false,onC
  };
  useEffect(()=>{if(ready)void run(refreshSync);},[ready,userId]);
  const syncPort=()=>({
-   userId:eligibleUser,
-   read:async()=>await readCloudPlannerSnapshot(),
+   userId:plannerAccountId,
+   read:async()=>await readCloudPlannerSnapshot(userId),
    backup:(payload:string)=>backup(payload,'pre-sync'),
    upload:saveCloudPlannerSnapshot,
-   apply:replaceStore,
+   apply:async(next:Store)=>{
+    requireSyncBinding(userId,panelBinding.current,panelMounted.current);
+    if(await plannerAccountId()!==userId)throw Error('Account changed. The cloud copy was not applied.');
+    requireSyncBinding(userId,panelBinding.current,panelMounted.current);
+    await replaceStore(next);
+   },
  });
  const button=(label:string,action:()=>void,disabled=false,secondary=false,primaryAction=false)=><Pressable accessibilityRole="button" accessibilityLabel={label} disabled={busy||disabled} accessibilityState={{disabled:busy||disabled}} onPress={action} style={[styles.button,primaryAction&&styles.primaryActionButton,secondary&&styles.secondaryButton,(busy||disabled)&&{opacity:.5}]}><Text style={[styles.buttonText,secondary&&styles.secondaryButtonText]}>{label}</Text></Pressable>;
  const check=(label:string,value:boolean,change:()=>void)=><Pressable accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{checked:value,disabled:busy}} disabled={busy} onPress={change}><Text style={styles.text}>{value?'✓':'○'} {label}</Text></Pressable>;
@@ -138,8 +155,8 @@ export function CloudDataPanel({store,ready,userId,replaceStore,guided=false,onC
  {button('Check for latest changes',()=>void run(refreshSync),!ready)}
  {!syncReview&&button('Review this planner for cloud copy',()=>void run(async()=>{
   setReview(null);setConfirmed(false);
-  if(await eligibleUser()!==userId)throw Error('Account changed. Open your account again.');
-  if(await readCloudPlannerSnapshot())return refreshSync();
+  if(await plannerAccountId()!==userId)throw Error('Account changed. Open your account again.');
+  if(await readCloudPlannerSnapshot(userId))return refreshSync();
   setReview(reviewMigration(userId,encodePlannerStore(current.current)));
   return 'Review this device’s planner below. A verified local safety copy will be retained.';
  }),!ready)}
@@ -147,7 +164,7 @@ export function CloudDataPanel({store,ready,userId,replaceStore,guided=false,onC
  {check('I explicitly agree to create this account’s first private cloud planner copy.',confirmed,()=>setConfirmed(v=>!v))}
  {button('Copy this planner to the cloud',()=>void run(async()=>{
   await confirmMigration(review,()=>encodePlannerStore(current.current),confirmed,{
-   userId:eligibleUser,cloudExists:async()=>Boolean(await readCloudPlannerSnapshot()),
+   userId:plannerAccountId,cloudExists:async()=>Boolean(await readCloudPlannerSnapshot(userId)),
    backup:payload=>backup(payload,'pre-cloud'),
    upload:uploadInitialPlannerCopy,
   });setReview(null);setConfirmed(false);await refreshSync();onCloudChanged?.();return 'Your planner is ready in the cloud. Sign in on your other device with the same email. Automatic sync will begin after it matches this cloud copy.';

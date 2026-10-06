@@ -41,6 +41,8 @@ export function effectiveTrackingStore(store:Store,access:MembershipAccess|null,
 function introducesTracking(before:SavedPlan|undefined,after:SavedPlan):boolean{
  if(after.pausedAt)return false;
  if(!before||before.pausedAt||before.compoundId!==after.compoundId)return true;
+ const settings:(keyof SavedPlan)[]=['stages','defaultSchedule','startDate','indefinite','cycleOnWeeks','cycleOffWeeks','vialMg','waterMl','reminderOffsetMinutes'];
+ if(settings.some(key=>JSON.stringify(before[key])!==JSON.stringify(after[key]))||!before.reminderEnabled&&after.reminderEnabled)return true;
  const events=new Map(before.events.map(e=>[e.id,e]));
  return after.events.some(e=>{
   const old=events.get(e.id);

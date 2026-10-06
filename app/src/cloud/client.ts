@@ -1,5 +1,6 @@
 import {ATTACHMENT_BUCKET,submitRecoverableFeedback,feedbackDeadline,type Screenshot} from './feedback-attachments';
 import {MembershipGateway} from './membership-access';
+import {MembershipPlannerClient} from './membership-planner';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {createClient} from '@supabase/supabase-js';
 import {validateCloudConfig} from './config';
@@ -34,8 +35,7 @@ async function restoreRecovery(){
 async function requireAccount(){
  const {data,error}=await configured().auth.getUser();
  if(error||!data.user)throw Error('Authentication required.');
- const access=await configured().rpc('beta_access');
- if(access.error||access.data!==true)throw Error('Account unavailable.');
+ await membershipGateway.status(data.user.id);
  return data.user;
 }
 export const authPort: AuthPort = {
@@ -46,7 +46,14 @@ export const authPort: AuthPort = {
   async requestRecovery(email){const {error}=await configured().auth.resetPasswordForEmail(email,{redirectTo:'https://app.ezpepplanner.com/'});if(error)throw Error('Recovery unavailable.');},
   async updatePassword(password){const user=await requireAccount();if(verifiedUser!==user.id||Date.now()-verifiedAt>600000)throw Error('Fresh verification required.');const {error}=await configured().auth.updateUser({password});if(error)throw Error('Password update failed.');recoveryUser=null;verifiedAt=0;verifiedUser=null;},
   async updateDisplayName(name){await requireAccount();const {error}=await configured().auth.updateUser({data:{display_name:name}});if(error)throw Error('Profile update failed.');},
-  async eligible(){const {data,error}=await configured().rpc('accept_beta_invite');if(error)throw error;return data===true;},
+  async eligible(expectedUserId){
+   const userId=await plannerAccountId();
+   if(expectedUserId&&userId!==expectedUserId)throw Error('Account changed. Sign in again.');
+   const {error}=await configured().rpc('accept_beta_invite');
+   if(error)throw Error('Account admission could not be verified.');
+   try{await membershipGateway.status(userId);return true;}
+   catch(error){if((error as {code?:string}).code==='42501')return false;throw error;}
+  },
   async signOut(){const {error}=await configured().auth.signOut({scope:'local'});if(error)throw error;recoveryUser=null;verifiedUser=null;verifiedAt=0;recoveryExchange=Promise.resolve();},
   subscribe(listener){const {data}=configured().auth.onAuthStateChange((event,session)=>{if(event==='PASSWORD_RECOVERY'&&session){recoveryUser=session.user.id;verifiedUser=session.user.id;verifiedAt=Date.now();}setTimeout(()=>listener(session?identity(session.user):null),0);});return()=>data.subscription.unsubscribe();},
 };
@@ -87,25 +94,21 @@ export async function readBetaScreenshot(path:string){
   const {data,error}=await configured().storage.from(ATTACHMENT_BUCKET).download(path);
   if(error||!data)throw Error('Private screenshot access denied.');return URL.createObjectURL(data);
 }
-// Explicit cloud operations only; never invoked during auth or startup.
-export async function readCloudPlannerSnapshot() {
-  const userId=await eligibleUser();
-  const {data,error}=await configured().from('planner_state').select('*').eq('user_id',userId).maybeSingle();
-  if(error)throw new Error('Cloud snapshot could not be read. Local data is unchanged.');
-  return data;
+// The v2 runtime binds authenticated ownership, membership receipts and revisions.
+export async function plannerAccountId(){
+ const {data,error}=await configured().auth.getUser();
+ if(error||!data.user)throw Error('Sign in to verify your planner account.');
+ return data.user.id;
+}
+export async function readCloudPlannerSnapshot(expectedUserId?:string) {
+ const userId=expectedUserId??await plannerAccountId();
+ return new MembershipPlannerClient(membershipGateway).read(userId);
 }
 export async function uploadInitialPlannerCopy(payload:string,expectedUserId:string){
-  if(await eligibleUser()!==expectedUserId)throw Error('Account changed. Review the copy again.');
-  const {error}=await configured().rpc('create_initial_planner_copy',{payload:JSON.parse(payload),confirmed:true,expected_user_id:expectedUserId});
-  if(error)throw Error(error.code==='40001'?'This account already has a cloud copy. Nothing was replaced.':'Cloud copy could not finish. Your local data and backup are unchanged.');
+ await new MembershipPlannerClient(membershipGateway).save(expectedUserId,payload,0,true);
 }
 export async function saveCloudPlannerSnapshot(payload:string,expectedRevision:number,expectedUserId:string){
-  if(await eligibleUser()!==expectedUserId)throw Error('Account changed. Review synchronization again.');
-  let parsed:unknown;
-  try{parsed=JSON.parse(payload);}catch{throw Error('Local planner data could not be validated. Nothing was uploaded.');}
-  const {data,error}=await configured().rpc('sync_planner_snapshot',{payload:parsed as Database['public']['Tables']['planner_state']['Row']['snapshot'],expected_revision:expectedRevision,expected_user_id:expectedUserId});
-  if(error)throw Error(error.code==='40001'?'Cloud data changed on another device. Refresh before choosing which copy to keep.':'Cloud synchronization could not finish. Your local data and backup are unchanged.');
-  return data;
+ return new MembershipPlannerClient(membershipGateway).save(expectedUserId,payload,expectedRevision);
 }
 export async function exportOwnAccount(){
   await eligibleUser();
@@ -226,7 +229,7 @@ export const membershipGateway=new MembershipGateway({
  async rpc(name,args){
   if(!['membership_access_status_v2','membership_planner_read_v2','membership_select_peptide_v2','membership_planner_write_v2'].includes(name))throw Error('Membership operation unavailable.');
   const {data,error}=await (configured() as any).rpc(name,args);
-  if(error)throw Error(error.code==='40001'?'Planner or membership changed on another device. Refresh before trying again.':'Membership could not be verified. Your saved data is unchanged.');
+  if(error)throw Object.assign(Error(error.code==='40001'?'Planner or membership changed on another device. Refresh before trying again.':'Membership could not be verified. Your saved data is unchanged.'),{code:error.code});
   return data;
  }
 });
