@@ -460,12 +460,12 @@ export default function App() {
           <Pressable accessibilityRole="tab" accessibilityState={{selected:schoolSection==="facts"}} onPress={()=>setSchoolSection("facts")} style={[styles.schoolTab,schoolSection==="facts"&&styles.schoolTabActive]}><Text numberOfLines={1} style={[styles.schoolTabText,schoolSection==="facts"&&styles.schoolTabTextActive]}>Quick Facts</Text></Pressable>
           <Pressable accessibilityRole="tab" accessibilityState={{selected:schoolSection==="community"}} onPress={()=>setSchoolSection("community")} style={[styles.schoolTab,schoolSection==="community"&&styles.schoolTabActive]}><Text numberOfLines={1} style={[styles.schoolTabText,schoolSection==="community"&&styles.schoolTabTextActive]}>Community</Text></Pressable>
         </View>
-        <View style={styles.hero}>
+        {schoolSection==="courses"?<View style={{flexDirection:"row",alignItems:"center",gap:12,marginTop:16,paddingHorizontal:16,paddingVertical:10,borderRadius:18,backgroundColor:COLORS.paleBlue}}><Image accessibilityLabel="Professor Lynch" source={require("./assets/professor-lynch-thinking.webp")} resizeMode="contain" style={{width:48,height:64}}/><View style={{flex:1}}><Text style={styles.kicker}>PEP SCHOOL</Text><Text style={styles.helper}>One lesson at a time, at your pace.</Text></View></View>:<View style={styles.hero}>
           <View style={styles.heroBubbleOne} /><View style={styles.heroBubbleTwo} />
           <View style={[styles.schoolHeroCopy,compactLayout&&styles.schoolHeroCopyCompact]}><Text style={styles.kicker}>PEP SCHOOL · WITH PROFESSOR LYNCH</Text><Text style={[styles.heroTitle,compactLayout&&styles.schoolHeroTitleCompact]}>A clearer place{"\n"}to begin.</Text><Text style={styles.heroSub}>Choose one learning area at a time.</Text></View>
           <View style={[styles.schoolSpeechBubble,compactLayout&&styles.schoolSpeechBubbleCompact]}><View style={styles.schoolSpeechTail}/><Text style={styles.schoolSpeechText}>Welcome! Pick a section and we’ll take it one clear step at a time.</Text></View>
           <Image accessibilityLabel="Professor Lynch welcoming you to Pep School" source={require("./assets/professor-lynch-thinking.webp")} resizeMode="contain" style={[styles.professorSchoolHero,compactLayout&&styles.professorSchoolHeroCompact]}/>
-        </View>
+        </View>}
 
 
         {schoolSection==="library"&&<>
