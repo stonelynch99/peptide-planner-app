@@ -1,0 +1,65 @@
+name: EZPep exact reviewed Pages restore
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Restore verified production bytes (false only prepares the artifact)
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: ezpep-private-beta-pages
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.repository == 'stonelynch99/peptide-planner-app' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact recovered artifact before use
+        shell: python
+        run: |
+          import hashlib, io, json, pathlib, tarfile, zipfile
+          root = pathlib.Path('.github/ezpep-rollback-080178f9')
+          data = (root / 'rollback.zip').read_bytes()
+          assert hashlib.sha256(data).hexdigest() == '324cb74b464ff85625c88ce3676035378bd8370d4fa458ba4d1a6d0fe38b12fc'
+          raw = (root / 'manifest.json').read_bytes()
+          assert hashlib.sha256(raw).hexdigest() == '2094b64e0f3a5a93c28e3c2023045ea467792a076c774ca691d5d3cf780233ad'
+          manifest = json.loads(raw)
+          expected = {x['path']: x for x in manifest['files']}
+          assert len(expected) == 17
+          with zipfile.ZipFile(io.BytesIO(data)) as z:
+            assert z.namelist() == ['artifact.tar']
+            with tarfile.open(fileobj=io.BytesIO(z.read('artifact.tar'))) as tar:
+              seen = set()
+              for member in tar.getmembers():
+                assert not member.issym() and not member.islnk()
+                if member.isdir(): continue
+                name = member.name.removeprefix('./')
+                assert member.isfile() and name in expected and name not in seen
+                content = tar.extractfile(member).read()
+                assert len(content) == expected[name]['bytes']
+                assert hashlib.sha256(content).hexdigest() == expected[name]['sha256']
+                output = pathlib.Path('verified-site') / name
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(content)
+                seen.add(name)
+              assert seen == set(expected)
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: verified-site
+          retention-days: 90
+  deploy:
+    if: inputs.deploy
+    needs: verify
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
