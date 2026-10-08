@@ -132,7 +132,7 @@ export function CloudDataPanel({store,ready,userId,replaceStore,guided=false,onC
    setReview(null);setConfirmed(false);setPendingDirection(null);setShowAdvanced(false);
    if(!row){setSyncReview(null);return 'No cloud planner exists yet. Review an initial cloud copy to begin.';}
    const next=reviewSync(userId,current.current,row);setSyncReview(next);
-   if(next.identical){await saveAutomaticBaseline(userId,{revision:row.revision,payload:next.cloudPayload});await AsyncStorage.setItem(automaticSuccessKey(userId),new Date().toISOString());}
+   if(next.identical){await saveAutomaticBaseline(userId,{revision:row.revision,payload:next.cloudPayload});await AsyncStorage.setItem(automaticSuccessKey(userId),new Date().toISOString());onCloudChanged?.();}
    return next.identical?'This device matches cloud revision '+next.cloudRevision+'.':'Cloud revision '+next.cloudRevision+' is available. Review both copies before choosing a direction.';
  };
  useEffect(()=>{if(ready)void run(refreshSync);},[ready,userId]);
