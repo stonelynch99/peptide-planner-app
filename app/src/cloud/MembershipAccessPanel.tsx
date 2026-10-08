@@ -1,22 +1,24 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {Pressable,Text,View,StyleSheet} from 'react-native';
-import {membershipGateway} from './client';
+import {Pressable,Text,View,StyleSheet,Linking} from 'react-native';
+import {membershipGateway,callLiveMembership,type LiveBillingStatus} from './client';
 import {accessIsCurrent,type MembershipAccess} from './membership-access';
 
 export default function MembershipAccessPanel({userId,onClose,trackingChoices=[]}:{userId:string;onClose:()=>void;trackingChoices?:{id:string;name:string}[]}){
  const [view,setView]=useState<{userId:string;access:MembershipAccess}|null>(null);
+ const [billing,setBilling]=useState<{userId:string;status:LiveBillingStatus}|null>(null);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[choice,setChoice]=useState<{id:string;name:string}|null>(null);
  const generation=useRef(0),currentUser=useRef(userId),running=useRef(false);currentUser.current=userId;
  const access=view?.userId===userId&&accessIsCurrent(view.access)?view.access:null;
  async function refresh(){
   if(running.current)return;
   running.current=true;setBusy(true);const seq=++generation.current,id=userId;
-  try{const next=await membershipGateway.status(id);if(seq===generation.current&&currentUser.current===id){setView({userId:id,access:next});setMessage('');}}
+  try{const next=await membershipGateway.status(id);if(seq===generation.current&&currentUser.current===id){setView({userId:id,access:next});setMessage('');}
+   try{const status=await callLiveMembership(id,'status') as LiveBillingStatus;if(seq===generation.current&&currentUser.current===id)setBilling({userId:id,status});}catch{if(seq===generation.current&&currentUser.current===id)setBilling(null);}}
   catch{if(seq===generation.current&&currentUser.current===id){setView(null);setMessage('Access could not be verified. Refresh to try again. Your saved plans, history and backups are preserved.');}}
   finally{if(seq===generation.current&&currentUser.current===id){running.current=false;setBusy(false);}}
  }
  useEffect(()=>{
-  generation.current++;running.current=false;setView(null);setChoice(null);setMessage('');void refresh();
+  generation.current++;running.current=false;setView(null);setBilling(null);setChoice(null);setMessage('');void refresh();
   return()=>{generation.current++;};
  },[userId]);
  useEffect(()=>{
@@ -38,6 +40,22 @@ export default function MembershipAccessPanel({userId,onClose,trackingChoices=[]
   }catch(error){if(seq===generation.current&&currentUser.current===id){setView(null);setMessage((error as Error).message);}}
   finally{if(seq===generation.current&&currentUser.current===id){running.current=false;setBusy(false);}}
  }
+ async function openBilling(operation:'checkout'|'portal'){
+  if(running.current)return;
+  const id=userId,seq=++generation.current;running.current=true;setBusy(true);setMessage('');
+  try{
+   const fresh=await membershipGateway.status(id);
+   const status=await callLiveMembership(id,'status') as LiveBillingStatus;
+   if(seq!==generation.current||currentUser.current!==id)return;
+   if(operation==='checkout'&&(fresh.tier==='pro'||!status.checkoutEnabled))throw Error('Paid enrollment is not open for this account.');
+   if(operation==='portal'&&!status.billingPortalEnabled)throw Error('Billing management is not available for this account.');
+   const result=await callLiveMembership(id,operation) as {url:string};
+   if(seq!==generation.current||currentUser.current!==id)return;
+   await Linking.openURL(result.url);
+  }catch{if(seq===generation.current&&currentUser.current===id){setBilling(null);setMessage('Billing could not be opened. Refresh membership before trying again.');}}
+  finally{if(seq===generation.current&&currentUser.current===id){running.current=false;setBusy(false);}}
+ }
+ const currentBilling=billing?.userId===userId?billing.status:null;
  const action=(label:string,onPress:()=>void,disabled=false)=><Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled:busy||disabled}} disabled={busy||disabled} onPress={onPress} style={[s.button,(busy||disabled)&&{opacity:.5}]}><Text style={s.buttonText}>{label}</Text></Pressable>;
  const choices=trackingChoices.filter((item,index,all)=>all.findIndex(other=>other.id===item.id)===index);
  const selectedName=choices.find(item=>item.id===access?.selectedCompoundId)?.name;
@@ -52,7 +70,11 @@ export default function MembershipAccessPanel({userId,onClose,trackingChoices=[]
  {!choices.length&&<Text style={s.body}>Set up your peptide and save its cloud copy first, then return here to choose it.</Text>}
  </>}
  </View>
- <View style={s.section}><Text accessibilityRole="header" style={s.heading}>Free and Pro</Text><Text style={s.body}>Free: one selected peptide and introductory learning.</Text><Text style={s.body}>Pro: multiple peptides, all current planner features and full learning.</Text><Text style={s.price}>CAD $7.99 / month</Text><Text style={s.body}>Plus applicable taxes. Paid signup is being prepared and is not open yet.</Text></View>
+ <View style={s.section}><Text accessibilityRole="header" style={s.heading}>Free and Pro</Text><Text style={s.body}>Free: track one selected peptide, including multiple plans for that peptide. All three introductory courses are included: 15 lessons across Foundations, Planning Fundamentals and Research Literacy.</Text><Text style={s.body}>Pro: multiple peptides, all current planner features and full learning.</Text><Text style={s.price}>CAD $7.99 / month</Text><Text style={s.body}>Plus applicable taxes. {currentBilling?.checkoutEnabled?'Paid enrollment is available.':'Paid enrollment is being prepared.'}</Text>
+ {access?.tier==='free'&&action('Subscribe to Pro',()=>void openBilling('checkout'),!currentBilling?.checkoutEnabled)}
+ {currentBilling?.billingPortalEnabled&&action('Manage billing',()=>void openBilling('portal'))}
+ {!currentBilling&&<Text style={s.body}>Billing availability has not been verified. Refresh membership to check.</Text>}
+ </View>
  {!!message&&<Text accessibilityLiveRegion="polite" style={s.message}>{message}</Text>}
  {action('Refresh membership',()=>void refresh())}{action('Return to planner',onClose)}
  </View>;

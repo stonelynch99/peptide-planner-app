@@ -229,6 +229,32 @@ export async function callMembership(expectedUserId:string,operation:'status'|'c
  return result;
 }
 
+// LIVE billing is separate from owner TEST billing. Never infer access from a return URL.
+export type LiveBillingStatus={mode:'live';tier:'free'|'pro';basis:string;checkoutEnabled:boolean;billingPortalEnabled:boolean;returnUrl:string;productionAccessFromReturn:false};
+export async function callLiveMembership(expectedUserId:string,operation:'status'|'checkout'|'portal'){
+ if(await plannerAccountId()!==expectedUserId)throw Error('Account changed. Open your membership again.');
+ const api=configured(),{data,error}=await api.auth.getSession();
+ if(error||data.session?.user.id!==expectedUserId||cloudConfig.status!=='ready')throw Error('Sign in to the original account.');
+ const response=await fetch('https://csolruvoeukctlybiemd.supabase.co/functions/v1/ezpep-membership-live/'+operation,{
+  method:'POST',headers:{authorization:'Bearer '+data.session.access_token,apikey:cloudConfig.key,'content-type':'application/json'},
+  body:'{}',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(25000)
+ });
+ const result=await response.json();
+ if(await plannerAccountId()!==expectedUserId)throw Error('Account changed. The billing response was discarded.');
+ if(!response.ok)throw Error(result?.code==='LIVE_PROCESSING_DISABLED'?'Paid enrollment is not open yet.':response.status===409?'Billing needs reconciliation. Refresh membership before trying again.':'Billing is unavailable. Your saved data is unchanged.');
+ if(result?.mode!=='live'||result.productionAccessFromReturn!==false)throw Error('Billing response could not be verified.');
+ if(operation==='status'){
+  if(!['free','pro'].includes(result.tier)||typeof result.basis!=='string'||typeof result.checkoutEnabled!=='boolean'||typeof result.billingPortalEnabled!=='boolean'||result.returnUrl!=='https://app.ezpepplanner.com/#membership')throw Error('Billing status could not be verified.');
+  return result as LiveBillingStatus;
+ }
+ const url=new URL(result.url);
+ const host=operation==='checkout'?'checkout.stripe.com':'billing.stripe.com';
+ if(url.protocol!=='https:'||url.hostname!==host||url.username||url.password||url.port)throw Error('Billing destination could not be verified.');
+ if(operation==='checkout'&&(typeof result.attemptId!=='string'||typeof result.reused!=='boolean'))throw Error('Checkout response could not be verified.');
+ if(operation==='portal'&&result.expires!=='provider_managed')throw Error('Billing portal response could not be verified.');
+ return {url:url.href};
+}
+
 export const membershipGateway=new MembershipGateway({
  async accountId(){
   const {data,error}=await configured().auth.getUser();
