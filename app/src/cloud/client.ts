@@ -50,9 +50,9 @@ export const authPort: AuthPort = {
    const userId=await plannerAccountId();
    if(expectedUserId&&userId!==expectedUserId)throw Error('Account changed. Sign in again.');
    const {error}=await configured().rpc('accept_beta_invite');
-   if(error)throw Error('Account admission could not be verified.');
+   // Invitation acceptance is for existing beta identities; verified membership also admits enrolled nonbeta accounts.
    try{await membershipGateway.status(userId);return true;}
-   catch(error){if((error as {code?:string}).code==='42501')return false;throw error;}
+   catch(statusError){if((statusError as {code?:string}).code==='42501')return false;throw statusError;}
   },
   async signOut(){const {error}=await configured().auth.signOut({scope:'local'});if(error)throw error;recoveryUser=null;verifiedUser=null;verifiedAt=0;recoveryExchange=Promise.resolve();},
   subscribe(listener){const {data}=configured().auth.onAuthStateChange((event,session)=>{if(event==='PASSWORD_RECOVERY'&&session){recoveryUser=session.user.id;verifiedUser=session.user.id;verifiedAt=Date.now();}setTimeout(()=>listener(session?identity(session.user):null),0);});return()=>data.subscription.unsubscribe();},
@@ -269,3 +269,85 @@ export const membershipGateway=new MembershipGateway({
  }
 });
 
+
+
+/** Public enrollment uses the server's default-closed gate; it never grants paid access. */
+export async function readEnrollmentAvailability():Promise<boolean>{
+ const {data,error}=await (configured() as any).rpc('ezpep_enrollment_public_status',{});
+ if(error)return false;
+ return data?.enabled===true&&data?.schemaVersion===1;
+}
+const ENROLLMENT_REFERRAL_KEY='ezpep.enrollment.referral.v1';
+export function pendingEnrollmentReferral():string|null{
+ if(typeof window==='undefined')return null;
+ try{
+  const url=new URL(window.location.href),incoming=url.searchParams.get('ref');
+  const saved=window.sessionStorage.getItem(ENROLLMENT_REFERRAL_KEY);
+  if(incoming!==null){
+   url.searchParams.delete('ref');window.history.replaceState(null,'',url.pathname+url.search+url.hash);
+   if(!saved&&/^[a-f0-9]{32}$/.test(incoming))window.sessionStorage.setItem(ENROLLMENT_REFERRAL_KEY,incoming);
+  }
+  const code=window.sessionStorage.getItem(ENROLLMENT_REFERRAL_KEY);
+  return code&&/^[a-f0-9]{32}$/.test(code)?code:null;
+ }catch{return null;}
+}
+export function clearEnrollmentReferral(){
+ if(typeof window!=='undefined')try{window.sessionStorage.removeItem(ENROLLMENT_REFERRAL_KEY);}catch{}
+}
+export async function requestAccountSignup(email:string,password:string,confirmation:string,displayName:string){
+ const address=email.trim().toLowerCase();
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)||address.length>254)throw Error('Enter a valid email address.');
+ if(password.length<6||password.length>128||!/[A-Za-z]/.test(password)||!/[0-9]/.test(password))throw Error('Use 6–128 characters, including a letter and a number.');
+ if(password!==confirmation)throw Error('The passwords do not match.');
+ if(displayName.trim().length>80)throw Error('Use a display name of 80 characters or fewer.');
+ if(!await readEnrollmentAvailability())throw Error('New account enrollment is not open yet.');
+ const {error}=await configured().auth.signUp({email:address,password,options:{
+  emailRedirectTo:(()=>{const target=new URL('https://app.ezpepplanner.com/#membership');const referral=pendingEnrollmentReferral();if(referral)target.searchParams.set('ref',referral);return target.href;})(),
+  data:{display_name:displayName.trim()}
+ }});
+ if(error)throw Error('Account creation could not be confirmed. Try again later or sign in if you already have an account.');
+ return 'Check your email to verify your address, then return here and confirm your account. If you already have an account, sign in. No payment has been taken.';
+}
+
+/** Prepared enrollment transport; server gate stays authoritative and closed until installed. */
+export type EnrollmentIntent={userId:string;sessionId:string;referralCode:string|null;generation:number};
+let enrollmentGeneration=0;
+if(client)client.auth.onAuthStateChange((event)=>{
+ if(['SIGNED_OUT','SIGNED_IN','USER_UPDATED','PASSWORD_RECOVERY'].includes(event))enrollmentGeneration++;
+});
+function enrollmentSessionId(token:string):string{
+ try{
+  const encoded=token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+  const claims=JSON.parse(globalThis.atob(encoded));
+  if(typeof claims.session_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(claims.session_id))throw Error();
+  return claims.session_id;
+ }catch{throw Error('Account session could not be verified. Sign in again.');}
+}
+export async function prepareAccountEnrollment(referralCode:string|null):Promise<EnrollmentIntent>{
+ if(referralCode!==null&&!/^[a-f0-9]{32}$/.test(referralCode))throw Error('Referral link is invalid.');
+ const generation=enrollmentGeneration,api=configured();
+ const {data:user,error:userError}=await api.auth.getUser();
+ const {data,error}=await api.auth.getSession();
+ if(generation!==enrollmentGeneration||userError||error||!user.user||data.session?.user.id!==user.user.id||!user.user.email_confirmed_at)throw Error('Verify your email and confirm your current account first.');
+ // Decoded session ID pins the request; server independently verifies JWT claims.
+ return {userId:user.user.id,sessionId:enrollmentSessionId(data.session.access_token),referralCode,generation};
+}
+export async function enrollConfirmedAccount(intent:EnrollmentIntent){
+ const api=configured();
+ const assertCurrent=async()=>{
+  const {data:user,error:userError}=await api.auth.getUser();
+  const {data,error}=await api.auth.getSession();
+  if(intent.generation!==enrollmentGeneration||userError||error||user.user?.id!==intent.userId||data.session?.user.id!==intent.userId||enrollmentSessionId(data.session.access_token)!==intent.sessionId)
+   throw Error('Account changed. Confirm your current account again.');
+ };
+ await assertCurrent();
+ const {data,error}=await (api as any).rpc('ezpep_enroll_account',{
+  expected_user:intent.userId,expected_session:intent.sessionId,referral_code:intent.referralCode
+ });
+ await assertCurrent();
+ if(error)throw Error('Enrollment is unavailable. Your saved data is unchanged.');
+ if(data?.enrolled!==true||data.userId!==intent.userId||data.paidAccessGranted!==false||typeof data.attributed!=='boolean')throw Error('Enrollment response could not be verified.');
+ // Only authoritative status can grant access; a referral or checkout return cannot.
+ await membershipGateway.status(intent.userId);
+ return {enrolled:true,attributed:data.attributed};
+}

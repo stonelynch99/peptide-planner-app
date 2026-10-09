@@ -58,9 +58,8 @@ export function useQuietRelease(safe:boolean,userId:string|null,store:Parameters
   const visible=()=>{if(doc.visibilityState==='visible'){interacted=false;void run();}};
   const page=()=>{interacted=false;void run();};
   doc.addEventListener('pointerdown',touch,true);doc.addEventListener('keydown',touch,true);doc.addEventListener('input',touch,true);doc.addEventListener('visibilitychange',visible);win.addEventListener('pageshow',page);
-  const timer=win.setInterval(()=>void run(),60000);
   trigger.current=run;void run();
-  return()=>{disposed=true;trigger.current=null;win.clearInterval(timer);doc.removeEventListener('pointerdown',touch,true);doc.removeEventListener('keydown',touch,true);doc.removeEventListener('input',touch,true);doc.removeEventListener('visibilitychange',visible);win.removeEventListener('pageshow',page);};
+  return()=>{disposed=true;trigger.current=null;doc.removeEventListener('pointerdown',touch,true);doc.removeEventListener('keydown',touch,true);doc.removeEventListener('input',touch,true);doc.removeEventListener('visibilitychange',visible);win.removeEventListener('pageshow',page);};
  },[]);
  useEffect(()=>{if(safe)void trigger.current?.();},[safe,userId]);
  return {message,checking,checkNow:()=>{if(trigger.current)void trigger.current(true);else setMessage('Update checks are available in the installed web app.');}};

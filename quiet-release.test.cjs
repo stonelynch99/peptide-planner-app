@@ -23,7 +23,7 @@ test('manual lookup works independently; reload still protects edits, sync, feed
  async function mount(){unmount();effects=[];refs=[];delete require.cache[require.resolve('./app/src/quiet-release.ts')];hook=require('./app/src/quiet-release.ts').useQuietRelease(safe,'owner',payload,['cloud sync is paused']);cleanups=effects.map(f=>f()).filter(Boolean);await flush();}
  async function check(){hook.checkNow();await flush();}
  try{
-  await mount();assert.equal(requests,0);await check();assert.equal(requests,1);assert.match(message,/latest available/);assert.equal(reloads,0);assert.equal(checking,false);
+  await mount();assert.equal(intervals,0,'no continuous update timer');assert.equal(requests,0);await check();assert.equal(requests,1);assert.match(message,/latest available/);assert.equal(reloads,0);assert.equal(checking,false);
   fetched={sha:'b'.repeat(40),publishedAt:200};await check();assert.match(message,/cloud sync is paused/);assert.equal(reloads,0);
   safe=true;await mount();pending=[{}];await check();assert.match(message,/pending feedback/);assert.equal(reloads,0);pending=[];
   memory.delete(baseline);await check();assert.match(message,/cloud sync is not set up/);assert.equal(reloads,0);
@@ -40,7 +40,7 @@ test('reload wiring retains real activity guards and permits idle daily-sync sta
  const s=fs.readFileSync('app/App.tsx','utf8'),line=s.split('\n').find(x=>x.includes('useQuietRelease(saved.ready'));
  for(const guard of ['!betaAccount.state.recovery','!membershipOpen','!saved.saving','!saved.error','!saved.store.draft','!saved.store.activeEdit','!currentEdit','!feedbackBusy.current','!feedbackText','!feedbackShots.length','!feedbackPending.length','!importing','!restoreCandidate',"cloudSync.state.kind==='upToDate'","cloudSync.state.kind==='local'"])assert(line.includes(guard),guard);
  assert.match(s,/saved.store,updateBlockers/);assert.match(s,/onPress=\{appUpdates.checkNow\}/);
- const h=fs.readFileSync('app/src/quiet-release.ts','utf8');assert.doesNotMatch(h,/removeItem|\.clear\(|serviceWorker|location\.assign/);assert.match(h,/baseline.payload!==plannerSyncPayload/);
+ const h=fs.readFileSync('app/src/quiet-release.ts','utf8');assert.doesNotMatch(h,/removeItem|\.clear\(|serviceWorker|location\.assign|setInterval/);assert.match(h,/baseline.payload!==plannerSyncPayload/);
 });
 test('update baseline uses the same canonical compact representation as cloud sync',()=>{
  const {blankStore}=require('./app/src/engine.ts'),P=require('./app/src/cloud/planner-sync.ts'),E=require('./app/src/persistence-v04.ts');

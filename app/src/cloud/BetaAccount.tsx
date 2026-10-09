@@ -1,4 +1,5 @@
 import {FeedbackReview} from './FeedbackReview';
+import {AccountEnrollment} from './AccountEnrollment';
 import React,{useEffect,useMemo,useState} from 'react';
 import {AppState,Image,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View,Linking,Platform,Share,useWindowDimensions} from 'react-native';
 import {EZPEP_LOCKUP_DATA_URI} from '../brand-assets';
@@ -54,7 +55,7 @@ export function BetaAccountPanel({account}:{account:ReturnType<typeof useBetaAcc
  {(state.status==='unconfigured'||state.status==='invalid')&&<Text style={s.text}>Account configuration needs administrator attention. Your local plans are preserved.</Text>}
  {state.status==='loading'&&<Text accessibilityLiveRegion="polite" style={s.text}>Checking account access…</Text>}
  {state.status==='signedOut'&&<>
- <Text accessibilityRole="header" style={s.formTitle}>Sign in</Text><Text style={s.text}>Use the email address for your existing beta account.</Text><Text style={s.fieldLabel}>Email address</Text>
+ <Text accessibilityRole="header" style={s.formTitle}>Sign in</Text><Text style={s.text}>Use the email address for your existing EZPep account.</Text><Text style={s.fieldLabel}>Email address</Text>
  <TextInput accessibilityLabel="Email address" editable={!busy} value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="username" textContentType="username" placeholder="Email address" style={s.input}/>
  <Text style={s.fieldLabel}>Password</Text>
  <TextInput accessibilityLabel="Password" editable={!busy} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" textContentType="password" placeholder="Password" style={s.input} onSubmitEditing={()=>void run(async()=>{const result=await controller!.passwordSignIn(email,password);setPassword('');return result;})}/>
@@ -63,7 +64,7 @@ export function BetaAccountPanel({account}:{account:ReturnType<typeof useBetaAcc
  {button(codeMode?'Hide email-code sign-in':'Use an email code / set up a password',()=>setCodeMode(!codeMode))}
  {codeMode&&codeFields}</>}
  {state.status==='eligible'&&<>
- <View style={s.identity}><Text style={s.identityName}>{state.displayName||'Signed in'}</Text><Text style={s.text}>{state.email}</Text><View style={s.accessBadge}><Text style={s.accessBadgeText}>Beta access active</Text></View><Text style={s.caption}>Your current beta access continues independently of paid membership.</Text></View>
+ <View style={s.identity}><Text style={s.identityName}>{state.displayName||'Signed in'}</Text><Text style={s.text}>{state.email}</Text><View style={s.accessBadge}><Text style={s.accessBadgeText}>Account access verified</Text></View><Text style={s.caption}>Your membership panel shows your current access. Existing invited beta access is preserved.</Text></View>
  <View style={s.accountSection}><Text accessibilityRole="header" style={s.sectionTitle}>Profile</Text><Text style={s.caption}>How your account appears in EZPep.</Text><Text style={s.text}>Display name (optional)</Text>
  <TextInput accessibilityLabel="Display name" editable={!busy} value={name} onChangeText={setName} maxLength={80} autoComplete="name" placeholder="Display name" style={s.input}/>
  {button('Save display name',()=>void run(()=>controller!.saveName(name)))}
@@ -99,7 +100,8 @@ export function BetaAccountPanel({account}:{account:ReturnType<typeof useBetaAcc
  <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent}} onPress={()=>setConsent(v=>!v)}><Text style={s.text}>{consent?'✓':'○'} I agree to store my account consent and feedback I choose to submit privately for beta review. Optional peptide details are included only with my feedback consent. Storage is not end-to-end encrypted.</Text></Pressable>
  {button('Save account consent',()=>void run(async()=>{await acknowledgeCloudConsent();return 'Account consent saved.';}),!consent)}</View>
  </>}
- {state.status==='denied'&&<Text style={s.text}>This account does not currently have beta access. Contact the beta organizer or sign out.</Text>}
+ {state.status==='denied'&&<Text style={s.text}>Your account needs verified enrollment before planner access is available. Existing data is preserved.</Text>}
+ {controller&&<AccountEnrollment state={state} onRefresh={()=>controller.refresh()}/>}
  {state.status==='error'&&<><Text style={s.text}>Account access or the recovery link could not be verified. Your data is preserved. Retry or request a new recovery link.</Text>{button('Retry account check',()=>void run(()=>controller!.refresh()))}</>}
  {controller&&state.status!=='signedOut'&&state.status!=='loading'&&button('Sign out',()=>void run(()=>controller.signOut()))}
  {busy&&<Text accessibilityLiveRegion="polite" style={s.text}>Please wait…</Text>}
