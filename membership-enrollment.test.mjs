@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import {handler} from './membership-foundation/backend/http.mjs';
+import {Store} from './membership-foundation/backend/store.mjs';
+const user='00000000-0000-4000-8000-000000000001';
+let status={status:'verified',tier:'free',basis:'free',preserveAllData:true,verifiedAt:new Date().toISOString(),validUntil:new Date(Date.now()+60000).toISOString()},authOK=true,beta=false;
+const calls=[];
+const fetcher=async(url,options={})=>{
+ calls.push({url,authorization:options.headers?.authorization});
+ if(url.endsWith('/auth/v1/user'))return Response.json(authOK?{id:user}:{},{status:authOK?200:401});
+ if(url.endsWith('/rpc/membership_access_status_v2'))return Response.json(status);
+ if(url.endsWith('/rpc/beta_access'))return Response.json(beta);
+ throw Error('UNEXPECTED_NETWORK_TARGET');
+};
+const store=new Store(),serve=handler(store,{accountWebsiteEnabled:true,publishable:'sb_publishable_fixture',accountOwners:[]},fetcher);
+const req=(path,body={})=>serve(new Request('https://fixed.invalid'+path,{method:'POST',headers:{origin:'https://app.ezpepplanner.com',authorization:'Bearer synthetic-fixture','content-type':'application/json'},body:JSON.stringify(body)}));
+const checks=[];
+let r=await req('/accounts/dashboard');assert.equal(r.status,200);assert.equal((await r.json()).account.id,user);checks.push('ordinary Free account admitted by authoritative status');
+status={...status,tier:'pro',basis:'existing_beta'};assert.equal((await req('/accounts/dashboard')).status,200);checks.push('permanent beta admission preserved');
+status={...status,tier:'pro',basis:'paid'};assert.equal((await req('/accounts/dashboard')).status,200);checks.push('paid Pro admitted');
+status={...status,validUntil:new Date(0).toISOString()};assert.equal((await req('/accounts/dashboard')).status,403);checks.push('stale entitlement rejected');
+authOK=false;assert.equal((await req('/accounts/dashboard')).status,401);authOK=true;checks.push('authentication required');
+status={...status,tier:'free',basis:'free',validUntil:new Date(Date.now()+60000).toISOString()};assert.equal((await req('/accounts/owner/view',{section:'launch'})).status,403);checks.push('ordinary account cannot use owner operation');
+assert.equal((await req('/membership/status')).status,403);checks.push('TEST service beta isolation preserved');
+assert.equal(calls.filter(x=>x.url.endsWith('/rpc/membership_access_status_v2')).every(x=>x.authorization==='Bearer synthetic-fixture'),true);checks.push('same verified bearer forwarded');
+store.db.close();
+console.log(JSON.stringify({passed:true,checks,evidence:'Isolated in-memory account store and mocked authenticated Supabase responses; no provider or production requests'}));

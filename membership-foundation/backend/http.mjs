@@ -22,8 +22,15 @@ export function handler(store,config,fetcher=fetch){const stripe=new StripeTest(
  }
  if(accountPath&&config.accountWebsiteEnabled!==true)return reply(503,{error:'ACCOUNT_AREA_NOT_READY'});
  const user=await authenticate(request.headers.get('authorization'),config.publishable,fetcher);
- // No sign-up or invitation mutation: eligibility read only.
- const beta=await fetcher(PROJECT+'/rest/v1/rpc/beta_access',{method:'POST',headers:{authorization:request.headers.get('authorization'),apikey:config.publishable,'content-type':'application/json'},body:'{}',redirect:'error'});if(!beta.ok||await beta.json()!==true)return reply(403,{error:'BETA_ACCESS_REQUIRED'});
+ // Account admission comes from the same authenticated membership runtime. TEST billing retains its beta restriction.
+ if(accountPath){
+  const status=await fetcher(PROJECT+'/rest/v1/rpc/membership_access_status_v2',{method:'POST',headers:{authorization:request.headers.get('authorization'),apikey:config.publishable,'content-type':'application/json'},body:'{}',redirect:'error',signal:AbortSignal.timeout(15000)});
+  if(!status.ok)return reply(403,{error:'ACCOUNT_ACCESS_REQUIRED'});
+  const access=await status.json(),now=Date.now();
+  if(access?.status!=='verified'||!['free','pro'].includes(access.tier)||!['free','paid','existing_beta'].includes(access.basis)||access.preserveAllData!==true||!Number.isFinite(Date.parse(access.validUntil))||Date.parse(access.validUntil)<=now||!Number.isFinite(Date.parse(access.verifiedAt))||Date.parse(access.verifiedAt)>now+60000)return reply(403,{error:'ACCOUNT_ACCESS_UNVERIFIED'});
+ }else{
+  const beta=await fetcher(PROJECT+'/rest/v1/rpc/beta_access',{method:'POST',headers:{authorization:request.headers.get('authorization'),apikey:config.publishable,'content-type':'application/json'},body:'{}',redirect:'error'});if(!beta.ok||await beta.json()!==true)return reply(403,{error:'BETA_ACCESS_REQUIRED'});
+ }
  const input=JSON.parse(raw||'{}');
  if(accountPath){
   if(!input||Array.isArray(input)||typeof input!=='object')return reply(400,{error:'INVALID_ACCOUNT_REQUEST'});
