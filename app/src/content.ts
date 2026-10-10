@@ -1,3 +1,4 @@
+import type {ResearchPracticeReference} from "./research-practice";
 import type { ContentPack, PackCompound, PackPlan, PackSource, PackStage } from "./pack-types";
 /** Stable IDs connect School, Guide and plans. Replace placeholder content only
  * after the operator supplies the reviewed Six-Compound Content Pack. */
@@ -20,6 +21,7 @@ export type SchoolContent = {
   referenceSchedules: PlanTemplate[]; citations: Citation[];
 };
 export type Compound = {
+  researchPracticeReference?:ResearchPracticeReference;
   id: string; name: string; aliases: string[]; abbreviations: string[];
   shorthand: string[]; misspellings: string[]; subtitle: string; tags: string[];
   accent: string; school: SchoolContent; supplied?: PackCompound;

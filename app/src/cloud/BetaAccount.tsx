@@ -1,0 +1,130 @@
+import {FeedbackReview} from './FeedbackReview';
+import {AccountEnrollment} from './AccountEnrollment';
+import React,{useEffect,useMemo,useState} from 'react';
+import {AppState,Image,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View,Linking,Platform,Share,useWindowDimensions} from 'react-native';
+import {EZPEP_LOCKUP_DATA_URI} from '../brand-assets';
+import {AuthController} from './auth-controller';
+import {acknowledgeCloudConsent,readReferralSummary,authPort,cloudConfig,readBetaAdminDashboard,type BetaAdminUser} from './client';
+import {WEBSITE_ACCOUNT_URL,PLANNER_SHARE_URL,type ReferralSummary,type AccountState} from './contracts';
+
+export function ReferralsRewardsPanel({userId}:{userId:string}){
+ const [view,setView]=useState<ReferralSummary|null>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ const request=React.useRef(0),currentUser=React.useRef(userId);currentUser.current=userId;
+ useEffect(()=>{request.current++;setView(null);setMessage('');setBusy(false);return()=>{request.current++;};},[userId]);
+ const refresh=async()=>{if(busy)return;const seq=++request.current,id=userId;setView(null);setBusy(true);setMessage('');try{const next=await readReferralSummary(id);if(seq===request.current&&id===currentUser.current)setView(next);}catch{if(seq===request.current&&id===currentUser.current)setMessage('Account totals could not be loaded. Try again; your planner data is unchanged.');}finally{if(seq===request.current&&id===currentUser.current)setBusy(false);}};
+ const open=async()=>{try{await Linking.openURL(WEBSITE_ACCOUNT_URL);}catch{setMessage('Open '+WEBSITE_ACCOUNT_URL+' in your browser.');}};
+ const share=async()=>{try{const text='EZPep Planner — learn, plan and track. '+PLANNER_SHARE_URL;
+   if(Platform.OS==='web'){if(typeof navigator.share==='function'){await navigator.share({title:'EZPep Planner',text,url:PLANNER_SHARE_URL});setMessage('Share sheet opened. Referral rewards remain paused.');}else if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);setMessage('Planner link copied. Referral rewards remain paused.');}else setMessage('Copy this planner address: '+PLANNER_SHARE_URL);}
+   else {const result=await Share.share({title:'EZPep Planner',message:text});if(result.action===Share.sharedAction)setMessage('Planner link shared. Referral rewards remain paused.');}
+ }catch(error){if((error as any)?.name!=='AbortError')setMessage('Sharing could not finish. Copy '+PLANNER_SHARE_URL+' instead.');}};
+ const action=(label:string,onPress:()=>void,disabled=false)=><Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} accessibilityState={{disabled}} onPress={onPress} style={[s.button,disabled&&{opacity:.5}]}><Text style={s.buttonText}>{label}</Text></Pressable>;
+ const money=(cents:number)=>'CAD $'+(cents/100).toFixed(2);
+ return <View testID="referrals-rewards-panel" style={s.accountSection}><Text style={s.accountKicker}>YOUR WEBSITE ACCOUNT</Text><Text accessibilityRole="header" style={s.sectionTitle}>Referrals & rewards</Text><Text style={s.text}>Your website account is the home for membership, referrals and rewards. It uses your existing planner email and password.</Text>
+ {action(view?.role==='owner'?'Open owner control panel':view?.role==='influencer'?'Open influencer dashboard':'Open website account',()=>void open())}
+ {view&&<><Text style={s.caption}>{view.role==='owner'?'Owner access':view.role==='influencer'?'Influencer access':'Member access'} · verified account records</Text><Text style={s.text}>{view.signups} referred signups</Text>
+ {view.role==='member'?<Text style={s.text}>Pro months: {view.pendingMonths} pending · {view.earnedMonths} earned</Text>:<><Text style={s.text}>Commissions: {money(view.pendingCents)} pending · {money(view.earnedCents)} earned</Text><Text style={s.text}>{money(view.owedCents)} owed · {money(view.paidCents)} paid</Text></>}
+ <Text style={s.caption}>These totals belong to your account. The owner website dashboard also shows the whole program.</Text><Text style={s.caption}>Reserved referral code: {view.code}. This code is not active yet.</Text></>}
+ {action(busy?'Loading account totals…':'Refresh my referral totals',()=>void refresh(),busy)}
+ <Text style={s.reassurance}>Referral activation and earning are paused. Sharing below sends the planner link without referral attribution or reward promises.</Text>
+ {action('Share EZPep Planner',()=>void share())}
+ {!!message&&<Text accessibilityLiveRegion="polite" style={s.caption}>{message}</Text>}
+ </View>;
+}
+
+export function useBetaAccount(){
+  const [state,setState]=useState<AccountState>({status:cloudConfig.status==='ready'?'loading':cloudConfig.status});
+  const controller=useMemo(()=>cloudConfig.status==='ready'?new AuthController(authPort,setState):null,[]);
+  useEffect(()=>{void controller?.start();const listener=AppState.addEventListener('change',value=>{if(value==='active')void controller?.refresh();});return()=>{controller?.stop();listener.remove();};},[controller]);
+  return {state,controller};
+}
+export function BetaAccountPanel({account}:{account:ReturnType<typeof useBetaAccount>}){
+ const {state,controller}=account;
+ const compact=useWindowDimensions().width<600;
+ const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[confirmation,setConfirmation]=useState(''),[code,setCode]=useState(''),[name,setName]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[codeMode,setCodeMode]=useState(false),[security,setSecurity]=useState(false),[passwordStep,setPasswordStep]=useState<'send'|'code'|'password'|'done'>('send'),[passwordMessage,setPasswordMessage]=useState(''),[consent,setConsent]=useState(false),[nextRequest,setNextRequest]=useState(0);
+ useEffect(()=>{setPassword('');setConfirmation('');setCode('');setName(state.displayName||'');setConsent(false);},[state.userId,state.displayName]);
+ useEffect(()=>{if(state.recovery){setSecurity(true);setPasswordStep('password');}},[state.recovery]);
+ const run=async(action:()=>Promise<string|void>)=>{if(busy)return;setBusy(true);setMessage('');try{setMessage((await action())||'');}catch{setMessage('The account action could not finish. Please retry.');}finally{setBusy(false);}};
+ const passwordAction=async(action:()=>Promise<string>)=>{if(busy)return;setBusy(true);setPasswordMessage('');try{setPasswordMessage(await action());}catch{setPasswordMessage('This step could not finish. Please try again.');}finally{setBusy(false);}};
+ const button=(label:string,action:()=>void,disabled=false)=><Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled:disabled||busy}} disabled={disabled||busy} onPress={action} style={[s.button,['Save display name','Save account consent','Sign out','Forgot password?','Use an email code / set up a password','Hide email-code sign-in'].includes(label)&&s.secondaryButton,(disabled||busy)&&{opacity:.5}]}><Text style={[s.buttonText,['Save display name','Save account consent','Sign out','Forgot password?','Use an email code / set up a password','Hide email-code sign-in'].includes(label)&&s.secondaryText]}>{label}</Text></Pressable>;
+ const requestCode=()=>void run(async()=>{if(Date.now()<nextRequest)return 'Wait 60 seconds before requesting another code.';setNextRequest(Date.now()+60000);return controller!.request(state.email||email);});
+ const codeFields=<><Text style={s.text}>Use a fresh six-digit email code to verify your existing account. You do not need to register again.</Text>{button('Send verification code',requestCode)}<TextInput accessibilityLabel="Six-digit email code" editable={!busy} value={code} onChangeText={setCode} maxLength={6} keyboardType="number-pad" autoComplete="one-time-code" placeholder="Six-digit code" style={s.input}/>{button('Verify code',()=>void run(async()=>{const result=await controller!.verify(state.email||email,code);setCode('');return result||'Account verified. You may now set your password.';}))}</>;
+ return <View style={[s.card,compact&&s.cardCompact]}>
+ <View style={s.accountHeader}><Image source={{uri:EZPEP_LOCKUP_DATA_URI}} accessibilityLabel="EZPep Planner" resizeMode="contain" style={s.accountLogo}/><Pressable accessibilityRole="link" accessibilityLabel="Visit EZPep website" onPress={()=>void Linking.openURL('https://ezpepplanner.com/')} style={s.websiteLink}><Text style={s.websiteLinkText}>Website ↗</Text></Pressable></View>
+ <View style={s.accountHero}><Text style={s.accountKicker}>{state.status==='eligible'?'YOUR ACCOUNT':'WELCOME BACK'}</Text><Text accessibilityRole="header" style={[s.title,compact&&s.titleCompact]}>{state.status==='eligible'?'A home for your account.':'Your plans.\nReady when you are.'}</Text><Text style={s.heroText}>{state.status==='eligible'?'Manage your profile, security and account preferences in one place.':'Sign in to continue with your planner, schedule and saved history.'}</Text></View>
+ <Text style={s.reassurance}>Your saved plans stay on this device while we check account access.</Text>
+ {(state.status==='unconfigured'||state.status==='invalid')&&<Text style={s.text}>Account configuration needs administrator attention. Your local plans are preserved.</Text>}
+ {state.status==='loading'&&<Text accessibilityLiveRegion="polite" style={s.text}>Checking account access…</Text>}
+ {state.status==='signedOut'&&<>
+ <Text accessibilityRole="header" style={s.formTitle}>Sign in</Text><Text style={s.text}>Use the email address for your existing EZPep account.</Text><Text style={s.fieldLabel}>Email address</Text>
+ <TextInput accessibilityLabel="Email address" editable={!busy} value={email} onChangeText={setEmail} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" autoComplete="username" textContentType="username" placeholder="Email address" style={s.input}/>
+ <Text style={s.fieldLabel}>Password</Text>
+ <TextInput accessibilityLabel="Password" editable={!busy} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="current-password" textContentType="password" placeholder="Password" style={s.input} onSubmitEditing={()=>void run(async()=>{const result=await controller!.passwordSignIn(email,password);setPassword('');return result;})}/>
+ {button('Sign in',()=>void run(async()=>{const result=await controller!.passwordSignIn(email,password);setPassword('');return result;}))}
+ {button('Forgot password?',()=>void run(async()=>{if(Date.now()<nextRequest)return 'Wait 60 seconds before requesting another email.';setNextRequest(Date.now()+60000);return controller!.recover(email);}))}
+ {button(codeMode?'Hide email-code sign-in':'Use an email code / set up a password',()=>setCodeMode(!codeMode))}
+ {codeMode&&codeFields}</>}
+ {state.status==='eligible'&&<>
+ <View style={s.identity}><Text style={s.identityName}>{state.displayName||'Signed in'}</Text><Text style={s.text}>{state.email}</Text><View style={s.accessBadge}><Text style={s.accessBadgeText}>Account access verified</Text></View><Text style={s.caption}>Your membership panel shows your current access. Existing invited beta access is preserved.</Text></View>
+ <View style={s.accountSection}><Text accessibilityRole="header" style={s.sectionTitle}>Profile</Text><Text style={s.caption}>How your account appears in EZPep.</Text><Text style={s.text}>Display name (optional)</Text>
+ <TextInput accessibilityLabel="Display name" editable={!busy} value={name} onChangeText={setName} maxLength={80} autoComplete="name" placeholder="Display name" style={s.input}/>
+ {button('Save display name',()=>void run(()=>controller!.saveName(name)))}
+ </View><View style={s.accountSection}><Text accessibilityRole="header" style={s.sectionTitle}>Security</Text><Text style={s.caption}>Manage your password using email verification.</Text>
+ {button('Set or change password',()=>{setPassword('');setConfirmation('');setCode('');setPasswordMessage('');setPasswordStep(state.recovery?'password':'send');setSecurity(true);})}
+ <Modal visible={security} transparent animationType="fade" onRequestClose={()=>{if(!busy)setSecurity(false);}}>
+ <View style={{flex:1,backgroundColor:'rgba(14,28,74,.65)',justifyContent:'center',padding:20}}>
+ <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{flexGrow:1,justifyContent:'center'}}>
+ <View accessibilityViewIsModal style={{width:'100%',maxWidth:460,alignSelf:'center',padding:24,gap:16,borderRadius:20,backgroundColor:'#fff'}}>
+ <Text accessibilityRole="header" style={s.title}>{passwordStep==='done'?'Password saved successfully':'Set your password'}</Text>
+ {!!passwordMessage&&<Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={{color:'#a32626',backgroundColor:'#fff0ed',padding:12,borderRadius:8,fontSize:16}}>{passwordMessage}</Text>}
+ {passwordStep==='send'&&<>
+ <Text style={s.text}>First, we’ll send a verification code to {state.email}. This confirms it’s you.</Text>
+ {button('Send code',()=>void passwordAction(async()=>{if(Date.now()<nextRequest)return 'Please wait a moment before requesting another code.';const result=await controller!.request(state.email!);if(result.startsWith('If this address')){setNextRequest(Date.now()+60000);setPasswordStep('code');return '';}return result;}))}
+ </>}
+ {passwordStep==='code'&&<>
+ <Text style={s.text}>Enter the six-digit code from your email.</Text>
+ <TextInput accessibilityLabel="Verification code" editable={!busy} value={code} onChangeText={setCode} maxLength={6} keyboardType="number-pad" autoComplete="one-time-code" autoFocus placeholder="Six-digit code" style={s.input}/>
+ {button('Continue',()=>void passwordAction(async()=>{const result=await controller!.verify(state.email!,code);if(!result){setCode('');setPasswordStep('password');}return result;}))}
+ <Pressable accessibilityRole="button" accessibilityLabel="Resend code" disabled={busy} onPress={()=>{setPasswordMessage('');setPasswordStep('send');}}><Text style={{color:'#425780',textAlign:'center',textDecorationLine:'underline'}}>Resend code</Text></Pressable>
+ </>}
+ {passwordStep==='password'&&<>
+ <Text style={s.text}>Choose at least 6 characters, including a letter and a number.</Text>
+ <TextInput accessibilityLabel="New password" editable={!busy} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="new-password" textContentType="newPassword" placeholder="New password" style={s.input}/>
+ <TextInput accessibilityLabel="Confirm password" editable={!busy} value={confirmation} onChangeText={setConfirmation} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete="new-password" textContentType="newPassword" placeholder="Confirm password" style={s.input}/>
+ {button('Save password',()=>void passwordAction(async()=>{const result=await controller!.savePassword(password,confirmation);if(result.startsWith('Password saved.')){setPassword('');setConfirmation('');setPasswordStep('done');return '';}return result;}))}
+ </>}
+ {passwordStep==='done'&&<><Text accessibilityLiveRegion="assertive" style={s.text}>Your password has been updated. Next time, sign in with your email and password.</Text>{button('Done',()=>setSecurity(false))}</>}
+ {busy&&<Text accessibilityLiveRegion="polite" style={s.text}>Please wait…</Text>}
+ {passwordStep!=='done'&&<Pressable accessibilityRole="button" accessibilityLabel="Cancel password setup" disabled={busy} onPress={()=>{setPassword('');setConfirmation('');setSecurity(false);}}><Text style={{color:'#425780',textAlign:'center'}}>Cancel</Text></Pressable>}
+ </View></ScrollView></View></Modal>
+ </View><View style={s.accountSection}><Text accessibilityRole="header" style={s.sectionTitle}>Privacy & feedback</Text>
+ <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent}} onPress={()=>setConsent(v=>!v)}><Text style={s.text}>{consent?'✓':'○'} I agree to store my account consent and feedback I choose to submit privately for beta review. Optional peptide details are included only with my feedback consent. Storage is not end-to-end encrypted.</Text></Pressable>
+ {button('Save account consent',()=>void run(async()=>{await acknowledgeCloudConsent();return 'Account consent saved.';}),!consent)}</View>
+ </>}
+ {state.status==='denied'&&<Text style={s.text}>Your account needs verified enrollment before planner access is available. Existing data is preserved.</Text>}
+ {controller&&<AccountEnrollment state={state} onRefresh={()=>controller.refresh()}/>}
+ {state.status==='error'&&<><Text style={s.text}>Account access or the recovery link could not be verified. Your data is preserved. Retry or request a new recovery link.</Text>{button('Retry account check',()=>void run(()=>controller!.refresh()))}</>}
+ {controller&&state.status!=='signedOut'&&state.status!=='loading'&&button('Sign out',()=>void run(()=>controller.signOut()))}
+ {busy&&<Text accessibilityLiveRegion="polite" style={s.text}>Please wait…</Text>}
+ {!!message&&<Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[s.text,{padding:12,backgroundColor:'#e9faff',borderRadius:8}]}>{message}</Text>}
+ </View>;
+}
+const adminDate=(value:string|null)=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'Not yet';
+const adminDuration=(seconds:number)=>seconds<60?seconds+' sec':Math.round(seconds/60)<60?Math.round(seconds/60)+' min':(seconds/3600).toFixed(1)+' hr';
+export function BetaDashboard({onBack}:{onBack:()=>void}){
+  const [users,setUsers]=useState<BetaAdminUser[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState('');
+  const load=async()=>{setLoading(true);setError('');try{setUsers(await readBetaAdminDashboard());}catch(value){setError(String(value).replace(/^Error:\s*/,''));}finally{setLoading(false);}};
+  useEffect(()=>{void load();},[]);
+  const totals=useMemo(()=>users.reduce((sum,user)=>({sessions:sum.sessions+user.sessions,seconds:sum.seconds+user.seconds,plans:sum.plans+user.plansStarted}),{sessions:0,seconds:0,plans:0}),[users]);
+  return <ScrollView contentContainerStyle={s.adminPage}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Back to More" onPress={onBack}><Text style={s.adminBack}>‹ More</Text></Pressable>
+    <Text style={s.adminKicker}>OWNER ACCESS</Text><View style={s.adminHeader}><View style={{flex:1}}><Text style={s.adminTitle}>Beta Dashboard</Text><Text style={s.adminSubtitle}>Private, aggregate product usage. Planner contents are excluded.</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Refresh beta dashboard" disabled={loading} onPress={()=>void load()} style={s.adminRefresh}><Text style={s.adminRefreshText}>{loading?'Loading…':'Refresh'}</Text></Pressable></View>
+    {!!error&&<View style={s.adminError}><Text style={s.adminErrorText}>{error}</Text></View>}
+    {!error&&<View style={s.adminStats}><AdminStat value={String(users.length)} label="Accounts"/><AdminStat value={String(totals.sessions)} label="Sessions"/><AdminStat value={adminDuration(totals.seconds)} label="Tracked time"/><AdminStat value={String(totals.plans)} label="Plans started"/></View>}
+    {users.map(user=><View key={user.userId} style={s.adminCard}><View style={s.adminCardTop}><View style={{flex:1}}><Text style={s.adminEmail}>{user.email}</Text><Text style={s.adminStatus}>{user.confirmedAt?'Confirmed':'Confirmation pending'} · Last sign-in: {adminDate(user.lastSignInAt)}</Text></View><View style={[s.adminDot,{backgroundColor:user.lastSignInAt?'#28A978':'#E0A13B'}]}/></View><View style={s.adminMetricRow}><AdminMetric value={user.sessions} label="Sessions"/><AdminMetric value={user.screenViews} label="Screens"/><AdminMetric value={adminDuration(user.seconds)} label="Time"/><AdminMetric value={user.plansStarted} label="Plans"/></View><View style={s.adminDetails}><Text style={s.adminDetail}>Latest activity: {adminDate(user.latestActivity)}</Text><Text style={s.adminDetail}>Onboarding: {user.onboardingCompleted} · Builder starts: {user.planBuilderStarts} · Imports: {user.imports} · Feedback: {user.feedback}</Text></View></View>)}
+    {!loading&&!error&&!users.length&&<Text style={s.adminEmpty}>No beta accounts are available.</Text>}
+    <FeedbackReview/><View style={s.adminNotice}><Text style={s.adminNoticeText}>Activity summaries exclude private planner contents. The separate feedback section shows only information and screenshots testers explicitly submit.</Text></View>
+  </ScrollView>;
+}
+function AdminStat({value,label}:{value:string;label:string}){return <View style={s.adminStat}><Text style={s.adminStatValue}>{value}</Text><Text style={s.adminStatLabel}>{label}</Text></View>;}
+function AdminMetric({value,label}:{value:string|number;label:string}){return <View style={s.adminMetric}><Text style={s.adminMetricValue}>{value}</Text><Text style={s.adminMetricLabel}>{label}</Text></View>;}
+const s=StyleSheet.create({accountHeader:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},accountLogo:{width:190,height:56,flexShrink:1},websiteLink:{minHeight:44,paddingHorizontal:10,justifyContent:'center'},websiteLinkText:{color:'#53617B',fontSize:13,fontWeight:'700'},accountHero:{paddingVertical:18,gap:12},accountKicker:{color:'#6850B5',fontSize:11,fontWeight:'800',letterSpacing:1.7},heroText:{color:'#53617B',fontSize:16,lineHeight:25},reassurance:{color:'#53617B',fontSize:12,lineHeight:19,padding:12,borderRadius:12,backgroundColor:'#F1FAFD'},formTitle:{color:'#0E1C4A',fontSize:20,fontWeight:'800',marginTop:12},fieldLabel:{color:'#334466',fontSize:13,fontWeight:'700',marginTop:6},accountSection:{padding:18,gap:12,borderRadius:18,borderWidth:1,borderColor:'#DDE8F6',backgroundColor:'#F9FBFE'},identity:{gap:8,padding:18,borderRadius:18,backgroundColor:'#F2EDFF'},identityName:{fontSize:20,fontWeight:'800',color:'#0E1C4A'},caption:{fontSize:13,lineHeight:20,color:'#53617B'},accessBadge:{alignSelf:'flex-start',paddingHorizontal:10,paddingVertical:6,borderRadius:12,backgroundColor:'#FFFFFF'},accessBadgeText:{fontSize:12,fontWeight:'700',color:'#24654E'},cardCompact:{padding:18,borderRadius:20},titleCompact:{fontSize:30,lineHeight:36},sectionTitle:{fontSize:18,fontWeight:'800',color:'#0E1C4A'},secondaryButton:{backgroundColor:'#EAF9FF',borderWidth:1,borderColor:'#DDE8F6'},secondaryText:{color:'#0E1C4A'},adminPage:{paddingHorizontal:20,paddingBottom:32},adminBack:{color:'#27B9EE',fontSize:15,fontWeight:'700',marginTop:14,marginBottom:10},adminKicker:{color:'#27B9EE',fontSize:12,fontWeight:'800',letterSpacing:1.7},adminHeader:{flexDirection:'row',alignItems:'flex-start',gap:12,marginTop:5},adminTitle:{color:'#0E1C4A',fontSize:30,fontWeight:'800'},adminSubtitle:{color:'#667597',fontSize:14,lineHeight:20,marginTop:4},adminRefresh:{minHeight:40,paddingHorizontal:14,borderRadius:14,backgroundColor:'#EAF9FF',borderWidth:1,borderColor:'#DDE8F6',alignItems:'center',justifyContent:'center'},adminRefreshText:{color:'#0E1C4A',fontSize:12,fontWeight:'800'},adminStats:{flexDirection:'row',flexWrap:'wrap',gap:10,marginTop:18},adminStat:{minWidth:130,flex:1,padding:14,borderRadius:18,backgroundColor:'#F2EDFF'},adminStatValue:{color:'#0E1C4A',fontSize:23,fontWeight:'800'},adminStatLabel:{color:'#667597',fontSize:11,marginTop:3},adminCard:{marginTop:14,padding:16,borderRadius:20,borderWidth:1,borderColor:'#DDE8F6',backgroundColor:'#FFFFFF'},adminCardTop:{flexDirection:'row',alignItems:'flex-start',gap:10},adminEmail:{color:'#0E1C4A',fontSize:16,fontWeight:'800'},adminStatus:{color:'#667597',fontSize:11,lineHeight:17,marginTop:4},adminDot:{width:11,height:11,borderRadius:6,marginTop:4},adminMetricRow:{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:14},adminMetric:{minWidth:72,flex:1,padding:10,borderRadius:14,backgroundColor:'#F7FBFF'},adminMetricValue:{color:'#0E1C4A',fontSize:16,fontWeight:'800'},adminMetricLabel:{color:'#667597',fontSize:10,marginTop:2},adminDetails:{marginTop:12,gap:4},adminDetail:{color:'#667597',fontSize:11,lineHeight:17},adminNotice:{marginTop:18,padding:14,borderRadius:16,backgroundColor:'#EAF9FF'},adminNoticeText:{color:'#667597',fontSize:12,lineHeight:18},adminError:{marginTop:18,padding:14,borderRadius:16,backgroundColor:'#FFF0ED'},adminErrorText:{color:'#A33A2B',fontSize:13,lineHeight:19},adminEmpty:{color:'#667597',paddingVertical:28,textAlign:'center'},card:{width:'100%',maxWidth:680,alignSelf:'center',padding:32,gap:12,borderRadius:26,backgroundColor:'#fff',borderWidth:1,borderColor:'#DDE8F6'},title:{fontSize:38,lineHeight:44,fontWeight:'800',color:'#0E1C4A'},text:{fontSize:15,lineHeight:23,color:'#334466',flexShrink:1},input:{width:'100%',minHeight:52,borderWidth:1,borderColor:'#A5B4CD',borderRadius:12,padding:14,color:'#0E1C4A',fontSize:16,backgroundColor:'#fff'},button:{padding:14,borderRadius:12,backgroundColor:'#0E1C4A'},buttonText:{color:'#fff',fontSize:15,fontWeight:'700',textAlign:'center'}});
