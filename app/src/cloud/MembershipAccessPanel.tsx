@@ -71,7 +71,7 @@ export default function MembershipAccessPanel({userId,onClose,trackingChoices=[]
  </>}
  </View>
  <View style={s.section}><Text accessibilityRole="header" style={s.heading}>Free and Pro</Text><Text style={s.body}>Free: track one selected peptide, including multiple plans for that peptide. All three introductory courses are included: 15 lessons across Foundations, Planning Fundamentals and Research Literacy.</Text><Text style={s.body}>Pro: multiple peptides, all current planner features and full learning.</Text><Text style={s.price}>CAD $7.99 / month</Text><Text style={s.body}>Plus applicable taxes. {currentBilling?.checkoutEnabled?'Paid enrollment is available.':'Paid enrollment is being prepared.'}</Text>
- {access?.tier==='free'&&action('Subscribe to Pro',()=>void openBilling('checkout'),!currentBilling?.checkoutEnabled)}
+ {access?.tier==='free'&&action('Upgrade to Pro',()=>void openBilling('checkout'),!currentBilling?.checkoutEnabled)}
  {currentBilling?.billingPortalEnabled&&action('Manage billing',()=>void openBilling('portal'))}
  {!currentBilling&&<Text style={s.body}>Billing availability has not been verified. Refresh membership to check.</Text>}
  </View>
