@@ -4,7 +4,7 @@ const {blankStore,newDraft,activate}=require('./app/src/engine.ts');
 const {library}=require('./app/src/library-v04.ts');
 const {encodeCompactPlannerStore,encodePlannerStore,decodePlannerStore}=require('./app/src/persistence-v04.ts');
 const {getActivePlans,addPlan}=require('./app/src/multiplan-v04.ts');
-const {MembershipGateway,membershipChangeError,effectiveTrackingStore}=require('./app/src/cloud/membership-access.ts');
+const {MembershipGateway,membershipChangeError,effectiveTrackingStore,membershipStartMode}=require('./app/src/cloud/membership-access.ts');
 const {MembershipPlannerClient,membershipPlannerRow}=require('./app/src/cloud/membership-planner.ts');
 const {MembershipSession}=require('./app/src/cloud/membership-session.ts');
 const {requireSyncBinding}=require('./app/src/cloud/sync-binding.ts');
@@ -123,3 +123,23 @@ test('actual privacy adapter: account switch discards export and cannot report r
 test('actual privacy adapter: unknown request status requires reconciliation without blind retry',async()=>{const f=clientFixture({requestStatus:'unknown'});await assert.rejects(f.api.setDeletionRequest(false,'one'),/status could not be verified/);assert.equal(f.calls.filter(c=>c.name==='set_deletion_request').length,1);});
 test('actual cloud adapter: read uses v2, not beta table access',async()=>{const f=clientFixture();assert.equal(await f.api.readCloudPlannerSnapshot('one'),null);assert.deepEqual(f.calls.map(c=>c.name),['membership_planner_read_v2']);});
 test('actual cloud adapter: initial and ordinary saves use exact v2 revision contract',async()=>{const f=clientFixture();await f.api.uploadInitialPlannerCopy(payload(),'one');assert.equal(f.calls.at(-1).args.initial_consent,true);assert.equal(f.calls.at(-1).args.expected_revision,0);assert.equal(await f.api.saveCloudPlannerSnapshot(payload(),4,'one'),5);assert.equal(f.calls.at(-1).args.initial_consent,false);assert.equal(f.calls.at(-1).name,'membership_planner_write_v2');});
+
+test('new Free account: first setup must be selected before another can be saved; selected and Pro paths remain available',()=>{
+ const empty={...blankStore(),activePlans:[]},first={...activate(draft()),pausedAt:'2026-10-12'},saved={...empty,activePlans:[first],active:first},before=encodePlannerStore(saved);
+ assert.equal(membershipStartMode(empty,evidence('free',null),'a'),'saveForSelection');
+ for(const compound of ['a','b'])assert.equal(membershipStartMode(saved,evidence('free',null),compound),'selectionRequired');
+ assert.equal(membershipStartMode(saved,evidence('free','a'),'a'),'start');
+ assert.equal(membershipStartMode(saved,evidence('free','a'),'b'),'upgradeRequired');
+ assert.equal(membershipStartMode(saved,evidence('pro',null),'b'),'start');
+ assert.equal(membershipStartMode(saved,null,'a'),'unavailable');
+ assert.equal(encodePlannerStore(saved),before);
+});
+test('actual setup action: unfinished Free selection cannot save another setup or request reminders',async()=>{
+ const f=startFixture('selectionRequired',evidence('free',null));await f.run();assert.deepEqual(f.calls,[]);assert.equal(getActivePlans(f.store()).length,0);assert.match(f.errors.at(-1),/Choose your saved Free peptide/);
+});
+test('actual cloud check: absent cloud copy opens first backup review without uploading or applying data',async()=>{
+ const source=fs.readFileSync('app/src/cloud/CloudDataPanel.tsx','utf8'),start=source.indexOf(' const refreshSync=async()=>{'),end=source.indexOf(' useEffect(()=>{if(ready)',start),local={...blankStore(),activePlans:[]},changes={};
+ const context={userId:'one',current:{current:local},readCloudPlannerSnapshot:async()=>null,encodePlannerStore,reviewMigration:(id,payload)=>({id,payload}),setReview:value=>changes.review=value,setSyncReview:value=>changes.sync=value,setConfirmed:value=>changes.confirmed=value,setPendingDirection:()=>{},setShowAdvanced:()=>{},setCloudAvailable:value=>changes.cloud=value};
+ vm.runInNewContext(ts.transpileModule(source.slice(start,end)+';globalThis.run=refreshSync;',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
+ const message=await context.run();assert.equal(changes.cloud,false);assert.equal(changes.sync,null);assert.equal(changes.confirmed,false);assert.equal(changes.review.payload,encodePlannerStore(local));assert.match(message,/No cloud backup exists yet/);assert.equal(context.current.current,local);
+});

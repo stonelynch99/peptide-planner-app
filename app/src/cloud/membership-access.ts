@@ -83,3 +83,12 @@ export class MembershipGateway{
   return this.call(userId,'membership_planner_write_v2',{payload,expected_revision:plannerRevision,expected_selection_revision:access?.selectionRevision??0,entitlement_receipt:access?.receipt??null,initial_consent:initialConsent});
  }
 }
+
+export type MembershipStartMode='start'|'saveForSelection'|'selectionRequired'|'upgradeRequired'|'unavailable';
+/** Complete the first Free selection before saving another setup. */
+export function membershipStartMode(store:Store,access:MembershipAccess|null,compoundId:string,now=Date.now()):MembershipStartMode{
+ if(!accessIsCurrent(access,now))return 'unavailable';
+ if(canTrackCompound(access,compoundId,now))return 'start';
+ if(access!.selectedCompoundId)return 'upgradeRequired';
+ return getActivePlans(store).length?'selectionRequired':'saveForSelection';
+}

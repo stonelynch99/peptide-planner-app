@@ -3,7 +3,7 @@ import {Pressable,Text,View,StyleSheet,Linking,TextInput} from 'react-native';
 import {membershipGateway,callLiveMembership,readProUpgradeProfile,saveProUpgradeProfile,type LiveBillingStatus} from './client';
 import {accessIsCurrent,type MembershipAccess} from './membership-access';
 
-export default function MembershipAccessPanel({userId,onClose,trackingChoices=[]}:{userId:string;onClose:()=>void;trackingChoices?:{id:string;name:string}[]}){
+export default function MembershipAccessPanel({userId,onClose,trackingChoices=[],onCloudSetup}:{userId:string;onClose:()=>void;onCloudSetup?:()=>void;trackingChoices?:{id:string;name:string}[]}){
  const [view,setView]=useState<{userId:string;access:MembershipAccess}|null>(null);
  const [billing,setBilling]=useState<{userId:string;status:LiveBillingStatus}|null>(null);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[choice,setChoice]=useState<{id:string;name:string}|null>(null);
@@ -34,10 +34,10 @@ export default function MembershipAccessPanel({userId,onClose,trackingChoices=[]
   try{
    const fresh=await membershipGateway.status(id);
    const result=await membershipGateway.read(id) as {planner:null|{revision:number}};
-   if(!result?.planner||!Number.isSafeInteger(result.planner.revision))throw Error('Save a cloud copy containing this peptide before choosing it for Free tracking.');
+   if(!result?.planner||!Number.isSafeInteger(result.planner.revision)){if(seq===generation.current&&currentUser.current===id)onCloudSetup?.();throw Error('Back up this device’s saved setup first, then choose your Free peptide.');}
    await membershipGateway.select(id,selected.id,result.planner.revision,fresh);
    const next=await membershipGateway.status(id);
-   if(seq===generation.current&&currentUser.current===id){setView({userId:id,access:next});setChoice(null);setMessage('Free tracking selection saved. Every saved plan and its history is preserved.');}
+   if(seq===generation.current&&currentUser.current===id){setView({userId:id,access:next});setChoice(null);setMessage('Free peptide selected. Return to My Peptides and choose Start tracking on its paused plan. Every saved plan and its history is preserved.');}
   }catch(error){if(seq===generation.current&&currentUser.current===id){setView(null);setMessage((error as Error).message);}}
   finally{if(seq===generation.current&&currentUser.current===id){running.current=false;setBusy(false);}}
  }
