@@ -351,3 +351,19 @@ export async function enrollConfirmedAccount(intent:EnrollmentIntent){
  await membershipGateway.status(intent.userId);
  return {enrolled:true,attributed:data.attributed};
 }
+
+/** Upgrade details belong to the verified account, never a URL or another session. */
+export async function readProUpgradeProfile(expectedUserId:string){
+ const {data,error}=await configured().auth.getUser();
+ if(error||data.user?.id!==expectedUserId||!data.user.email)throw Error('Account changed. Open your membership again.');
+ const metadata=data.user.user_metadata??{};
+ return {email:data.user.email,firstName:typeof metadata.first_name==='string'?metadata.first_name:'',lastName:typeof metadata.last_name==='string'?metadata.last_name:''};
+}
+export async function saveProUpgradeProfile(expectedUserId:string,firstName:string,lastName:string){
+ const first=firstName.trim(),last=lastName.trim();
+ if(!first||!last||first.length>80||last.length>80||/[\u0000-\u001f\u007f]/.test(first+last))throw Error('Enter your first and last name, up to 80 characters each.');
+ await readProUpgradeProfile(expectedUserId);
+ const {data,error}=await configured().auth.updateUser({data:{first_name:first,last_name:last,display_name:first+' '+last}});
+ if(error||data.user?.id!==expectedUserId)throw Error('Your name could not be saved. Please try again.');
+ return readProUpgradeProfile(expectedUserId);
+}
