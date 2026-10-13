@@ -18,8 +18,9 @@ test('private beta feedback is reachable from More and Community without automat
 test('beta privacy acknowledgement is local and repeats for account-linked consent',()=>{const source=fs.readFileSync('./app/App.tsx','utf8');assert.match(source,/pepplan\.beta-consent\.v1/);assert.match(source,/educational research, planning and tracking tool/);assert.match(source,/Routine authentication and reminder emails will not include peptide names/);assert.match(source,/transfer will require a preview and explicit confirmation/);assert.match(source,/Account-linked consent will be requested again/);});
 test('consent-gated beta analytics stays bounded to non-sensitive event names',()=>{
  const app=fs.readFileSync('app/App.tsx','utf8'),client=fs.readFileSync('app/src/cloud/client.ts','utf8'),sql=fs.readFileSync('supabase/migrations/202609110001_beta_analytics.sql','utf8');
- assert.match(app,/By continuing, you accept the private beta terms and limited product analytics/);
- assert.match(client,/insert\(\{user_id:userId,event_name:eventName,screen:screen\?\?null,duration_seconds:duration\}\)/);
+ assert.match(app,/Share limited product analytics/);assert.match(app,/This is optional/);
+ assert.match(app,/analyticsConsent=accountSetup.value\?\.analyticsConsent===true/);
+ assert.match(client,/await recordActivity\(eventName/);
  assert.match(sql,/exists \(\s*select 1 from public\.beta_analytics_consents/s);
  assert.match(sql,/grant insert on public\.beta_analytics_events to authenticated/);
  assert.doesNotMatch(sql,/grant select.*beta_analytics_events.*authenticated/i);

@@ -80,7 +80,7 @@ export default function MembershipAccessPanel({userId,onClose,trackingChoices=[]
  {access?.tier==='pro'&&<Text style={s.body}>Track multiple peptides and use the full current learning section.</Text>}
  {access?.tier==='free'&&<><Text style={s.body}>Track one selected peptide, including multiple plans for that peptide. Your saved plans and history remain available.</Text><Text style={s.body}>{access.selectedCompoundId?'Selected peptide: '+(selectedName||access.selectedCompoundId):'Choose a saved peptide to start Free tracking.'}</Text>
  {choice?<><Text style={s.body}>Use {choice.name} for Free tracking? This changes your selection without deleting or pausing any saved plan.</Text>{action('Confirm '+choice.name,()=>void confirmChoice())}{action('Cancel selection',()=>setChoice(null))}</>:choices.map(item=><View key={item.id}>{action('Choose '+item.name,()=>setChoice(item),item.id===access.selectedCompoundId)}</View>)}
- {!choices.length&&<Text style={s.body}>Set up your peptide and save its cloud copy first, then return here to choose it.</Text>}
+ {!choices.length&&<Text style={s.body}>Save your first peptide on this device. With your backup consent, EZPep backs it up and selects it for Free tracking automatically.</Text>}
  </>}
  </View>
  <View style={s.section}><Text accessibilityRole="header" style={s.heading}>Free and Pro</Text><Text style={s.body}>Free: track one selected peptide, including multiple plans for that peptide. All three introductory courses are included: 15 lessons across Foundations, Planning Fundamentals and Research Literacy.</Text><Text style={s.body}>Pro: multiple peptides, all current planner features and full learning.</Text><Text style={s.price}>CAD $7.99 / month</Text><Text style={s.body}>Plus applicable taxes. {currentBilling?.checkoutEnabled?'Paid enrollment is available.':'Paid enrollment is being prepared.'}</Text>
@@ -98,6 +98,7 @@ export default function MembershipAccessPanel({userId,onClose,trackingChoices=[]
  {!currentBilling&&<Text style={s.body}>Billing availability has not been verified. Refresh membership to check.</Text>}
  </View>
  {!!message&&<Text accessibilityLiveRegion="polite" style={s.message}>{message}</Text>}
+ {action('Open website account',()=>void Linking.openURL('https://app.ezpepplanner.com/website-preview/#account'))}
  {action('Refresh membership',()=>void refresh())}{action('Return to planner',onClose)}
  </View>;
 }

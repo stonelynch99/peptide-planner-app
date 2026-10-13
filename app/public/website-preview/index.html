@@ -155,12 +155,12 @@ function pager(root,p,fn){
  const row=node('div',undefined,'actions');row.append(node('span','Showing '+(p.total? p.offset+1:0)+'–'+Math.min(p.offset+50,p.total)+' of '+p.total));
  if(p.offset>0)row.append(button('Previous',()=>fn(Math.max(0,p.offset-50))));if(p.nextOffset!==null)row.append(button('Next',()=>fn(p.nextOffset)));root.append(row);
 }
-function selectSection(section){
+function selectSection(section,activityFilters={}){
  if(draftDirty){notify('Save or cancel your unfinished owner draft before changing screens.');return;}
- accountSection=section;window.history.replaceState(null,'','#account/'+section);cancelEditor();renderDashboard(accountView);
+ accountSection=section;window.history.replaceState(null,'','#account/'+section);cancelEditor();renderDashboard(accountView,activityFilters);
 }
 function card(root,title,copy){const panel=node('section',undefined,'account-panel');heading(panel,title,copy);root.append(panel);return panel;}
-function renderDashboard(value){
+function renderDashboard(value,activityFilters={}){
  const v=holdView(value),role=v.account.role;
  // A refresh cannot silently discard a draft or leave owner records visible after a role change.
  if(draftDirty){
@@ -172,7 +172,7 @@ function renderDashboard(value){
  const shell=node('div',undefined,'account-shell'),sidebar=node('aside',undefined,'account-sidebar');
  const brand=node('a','EZPep Planner','account-brand');brand.href='https://ezpepplanner.com/';brand.target='_blank';brand.rel='noopener';sidebar.append(brand,node('p',role==='owner'?'Owner workspace':role==='influencer'?'Influencer workspace':'Member workspace','account-workspace'));
  const nav=node('nav');nav.setAttribute('aria-label','Account screens');
- const sections=role==='owner'?[['overview','Overview'],['members','Members'],['revenue','Revenue'],['usage','App usage'],['program','Referral program'],['membership','My membership'],['help','Help'],['partners','Referral accounts'],['referrals','All referrals'],['entries','Rewards & commissions'],['payouts','Payout history'],['settings','Program settings'],['terms','Term versions'],['audit','Change history']]:[['overview','Overview'],['membership','Membership'],['help','Help'],['referrals','My referrals'],['entries',role==='member'?'My rewards':'My earnings'],...(role==='member'?[]:[['payouts','Payout history']]),['sharing','Share EZPep'],['policy','My terms']];
+ const sections=role==='owner'?[['overview','Overview'],['members','Members'],['revenue','Revenue'],['usage','Analytics'],['program','Referral program'],['membership','My membership'],['help','Help'],['partners','Referral accounts'],['referrals','All referrals'],['entries','Rewards & commissions'],['payouts','Payout history'],['settings','Program settings'],['terms','Term versions'],['audit','Change history']]:[['overview','Overview'],['membership','Membership'],['help','Help'],['referrals','My referrals'],['entries',role==='member'?'My rewards':'My earnings'],...(role==='member'?[]:[['payouts','Payout history']]),['sharing','Share EZPep'],['policy','My terms']];
  if(!sections.some(([key])=>key===accountSection))accountSection='overview';
  const addNavigation=(target,items)=>{for(const [key,label] of items){const b=button(label,()=>selectSection(key));b.className='account-nav-button';b.setAttribute('aria-current',key===accountSection?'page':'false');target.append(b);}};
  if(role==='owner'){
@@ -194,13 +194,13 @@ function renderDashboard(value){
  if(accountSection==='help'){renderHelp(main);return;}
  if(role==='owner'){
   if(['overview','members','revenue','usage'].includes(accountSection)){
-   const descriptions={members:['All memberships','The beta report appears below. Complete Free, paid Pro and reward Pro plan reporting is not connected yet. Referral profiles are not the full member roster.'],revenue:['Revenue & subscriptions','Verified Stripe reporting is not connected to this dashboard yet. No revenue or subscription figures are estimated here.'],usage:['App usage','Existing beta activity appears below. Full-product and screen-by-screen usage reporting is not connected yet. No new tracking is introduced.']};
+   const descriptions={members:['All memberships','Verified account classification and current access are reported separately. No planner contents are included.'],revenue:['Revenue & subscriptions','Verified Stripe reporting is not connected to this dashboard yet. No revenue or subscription figures are estimated here.'],usage:['App usage','Consented app interactions and preserved beta history. Missing telemetry is distinguished from zero measured activity.']};
    if(accountSection==='overview'){
     const panel=card(main,'Memberships','The whole-app overview is being connected. These figures are unavailable, not zero.');
     const metrics=node('div',undefined,'account-metrics');for(const label of ['Total members','Signups · last 7 days','Monthly recurring revenue'])metric(metrics,label,'Not connected');panel.append(metrics);
     for(const [key,title,copy] of [['members','Members','Free, paid Pro and reward Pro memberships'],['revenue','Revenue','Payments, refunds, fees and bank payouts'],['usage','App usage','Overall activity and feature usage'],['program','Referral program','Member Pro rewards and influencer commissions']]){const area=card(main,title,copy);area.append(button('View '+title.toLowerCase(),()=>selectSection(key)));}
    }else{const [title,copy]=descriptions[accountSection];card(main,title,copy);}
-   if(accountSection!=='revenue'){const beta=card(main,'Beta members & activity');void loadBetaReport(beta,accountSection);}
+   if(accountSection!=='revenue'){const report=card(main,accountSection==='members'?'Members':'Analytics');void loadMemberActivity(report,accountSection,activityFilters);}
    return;
   }
   if(accountSection==='settings'){void loadOwner('partners',0,'',true);}
@@ -281,6 +281,65 @@ async function loadBetaReport(root,section){
   else if(section==='usage')renderBetaUsage(root,rows);
   else{heading(root,'Beta accounts','The existing beta report is connected. Complete membership and revenue reporting are still being prepared.');const metrics=node('div',undefined,'account-metrics');metric(metrics,'Beta accounts in report',summary.accounts);metric(metrics,'Beta accounts created · last 7 days',summary.created7);metric(metrics,'Confirmed email accounts',summary.confirmed);root.append(metrics,button('View beta members',()=>selectSection('members')),button('View recorded app usage',()=>selectSection('usage')));}
  }catch(error){if(!current())return;root.replaceChildren();heading(root,'Beta report unavailable','No member count or usage figures are estimated. Your account, beta access and saved data are unchanged.');root.append(button('Retry beta report',()=>void loadBetaReport(root,section)));}
+}
+
+function memberActivityReport(report){
+ const count=v=>Number.isSafeInteger(v)&&v>=0, stamp=v=>v===null||(typeof v==='string'&&Number.isFinite(Date.parse(v)));
+ if(report?.schemaVersion!==1||!Array.isArray(report.members)||report.members.length>100||!Array.isArray(report.timeline)||report.timeline.length>200||!Array.isArray(report.events)||report.events.length>100||!Array.isArray(report.screens)||report.screens.length>3000)throw Error('REPORT_INVALID');
+ for(const key of ['totalMembers','signups','verifiedSignups','onboardingCompleted','firstPlanSaved','firstTrackingStarted','verifiedPaidConversions','builderSessionsWithoutSavedSetup','dailyActive','weeklyActive','monthlyActive','returningUsers'])if(!count(report[key]))throw Error('REPORT_INVALID');
+ const seen=new Set();
+ for(const m of report.members){
+  if(!m||typeof m.userId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(m.userId)||seen.has(m.userId)||typeof m.email!=='string'||m.email.length>254||!['beta','customer'].includes(m.classification)||!['free','pro','unavailable'].includes(m.tier)||!['existing_beta','paid','free','unverified','restricted','not_admitted'].includes(m.basis)||!['recorded','consent_not_granted','no_recorded_telemetry'].includes(m.telemetryState)||!['events','sessions','foregroundSeconds'].every(k=>count(m[k]))||!['createdAt','confirmedAt','lastSignInAt','lastActivity'].every(k=>stamp(m[k])))throw Error('REPORT_INVALID');
+  seen.add(m.userId);
+ }
+ for(const day of [1,7,30]){const e=report.signupCohortRetention?.['day'+day+'Eligible'],r=report.signupCohortRetention?.['day'+day+'Returned'];if(!count(e)||!count(r)||r>e)throw Error('REPORT_INVALID');}
+ return report;
+}
+async function loadMemberActivity(root,section,filters={}){
+ const epoch=generation,requestId=++ownerLoad,identity=session?.userId;
+ const current=()=>epoch===generation&&requestId===ownerLoad&&identity===session?.userId&&accountView?.account.role==='owner'&&accountSection===section;
+ const today=new Date(),end=filters.to||today.toISOString().slice(0,10),start=filters.from||new Date(today.getTime()-29*86400000).toISOString().slice(0,10);
+ root.replaceChildren();heading(root,section==='members'?'Members':'Analytics','Account classification is separate from Free/Pro access. Interaction measurements do not establish that content was understood.');
+ const form=node('form',undefined,'account-search');
+ const field=(label,type,value)=>{const wrapper=node('label',label),input=node('input');input.type=type;input.value=value;wrapper.append(input);form.append(wrapper);return input;};
+ const from=field('From','date',start),to=field('Through','date',end),search=field('Email or account ID','search',filters.query||'');search.maxLength=254;
+ const choice=(label,values,value)=>{const wrapper=node('label',label),select=node('select');for(const [v,text] of values){const o=node('option',text);o.value=v;select.append(o);}select.value=value;wrapper.append(select);form.append(wrapper);return select;};
+ const classification=choice('Account type',[['all','All accounts'],['beta','Beta'],['customer','Regular customers']],filters.classification||'all');
+ const tier=choice('Access',[['all','All access'],['free','Free'],['pro','Pro'],['unavailable','Unverified / unavailable']],filters.tier||'all');
+ const submit=node('button','Apply filters','button secondary');submit.type='submit';form.append(submit);
+ form.addEventListener('submit',e=>{e.preventDefault();void loadMemberActivity(root,section,{from:from.value,to:to.value,query:search.value,classification:classification.value,tier:tier.value});});root.append(form);
+ const output=node('div');root.append(output);heading(output,'Loading report','Reading protected account records…');
+ try{
+  if(!session||!config||accountView?.account.role!=='owner')throw Error('OWNER_REQUIRED');
+  const token=await access();if(!current())return;
+  const finish=new Date(end+'T00:00:00Z');finish.setUTCDate(finish.getUTCDate()+1);
+  const report=await fetchJson(PROJECT+'/rest/v1/rpc/owner_member_activity_v1',{method:'POST',headers:{authorization:'Bearer '+token,apikey:config.publishable,'content-type':'application/json'},body:JSON.stringify({from_date:start+'T00:00:00Z',to_date:finish.toISOString(),classification_filter:classification.value,tier_filter:tier.value,query:search.value,member_id:filters.member||null,offset_rows:filters.offset||0})},epoch);
+  if(!current())return;
+  memberActivityReport(report);
+  output.replaceChildren();
+  const metrics=node('div',undefined,'account-metrics');
+  for(const [label,key] of [['Accounts','totalMembers'],['Signups','signups'],['Email confirmations','verifiedSignups'],['Onboarding completed','onboardingCompleted'],['First setup saved','firstPlanSaved'],['First tracking started','firstTrackingStarted'],['Verified paid conversions','verifiedPaidConversions'],['Builder sessions without a saved setup','builderSessionsWithoutSavedSetup'],['Daily active','dailyActive'],['Weekly active','weeklyActive'],['Monthly active','monthlyActive'],['Returning users','returningUsers']])metric(metrics,label,report[key]);output.append(metrics);
+  output.append(node('p','Date ranges use UTC. No recorded telemetry is not proof of no activity. Consent and delivery state must be considered. Uploads still queued on a device are not visible to this report.','small'));
+  const retention=card(output,'Returning after signup','Consenting signup cohorts only; no historical activity is reconstructed.');
+  for(const day of [1,7,30]){const eligible=report.signupCohortRetention?.['day'+day+'Eligible'],returned=report.signupCohortRetention?.['day'+day+'Returned'];retention.append(node('p','Day '+day+': '+(eligible>0?returned+' of '+eligible+' eligible accounts ('+Math.round(returned/eligible*100)+'%)':'No eligible observed cohort yet')));}
+  retention.append(node('p','Only cohorts whose full observation window has elapsed are counted. A missing event may reflect missing telemetry. Active-user windows are bounded by the selected date range. Section engagement measures interactions, not understanding.','small'));
+  const stateLabel={recorded:'Recorded activity',consent_not_granted:'Consent not granted',no_recorded_telemetry:'No recorded telemetry'};
+  for(const member of report.members){
+   const c=card(output,member.email||member.userId,member.classification==='beta'?'Beta — invitation evidence verified':'Regular customer');
+   c.append(node('p','Access: '+member.tier+' · Basis: '+member.basis),node('p','Account ID: '+member.userId,'small'),node('p','Created: '+date(member.createdAt)+' · Email verified: '+date(member.confirmedAt)),node('p','Last sign-in: '+date(member.lastSignInAt)+' · Last recorded activity: '+date(member.lastActivity)),node('p',stateLabel[member.telemetryState]||'Report unavailable'));
+   if(member.telemetryState==='recorded')c.append(node('p',member.sessions+' recorded sessions · '+Math.round(member.foregroundSeconds/60)+' foreground engaged minutes'));
+   c.append(button('View activity',()=>selectSection('usage',{...filters,offset:0,from:start,to:end,member:member.userId})));
+  }
+  if(!report.members.length)output.append(node('p','No accounts match these filters.'));
+  if(filters.member){heading(output,'Activity timeline','Fixed app interactions only; private planner contents are excluded.');table(output,report.timeline,[['Time',r=>date(r.occurred_at)],['Event',r=>r.event_name],['Screen',r=>r.screen||'—'],['Content',r=>r.content_id||'—'],['Seconds',r=>r.duration_seconds],['Source',r=>r.source]],'No recorded events in this range.');output.append(button('All members',()=>selectSection('members')));}
+  if(section==='usage'){
+   table(output,report.events,[['Event',r=>r.event_name],['Source',r=>r.source],['Events',r=>r.count],['Members',r=>r.users]],'No recorded events in this range.');
+   table(output,report.screens,[['Screen',r=>r.screen||'—'],['Section / lesson',r=>r.content_id||'—'],['Source',r=>r.source],['Seconds',r=>r.seconds],['Maximum scroll %',r=>r.max_scroll||'—']],'No recorded screen or section events.');
+   output.append(node('p','Legacy beta timing may include idle time and is identified separately. Verified paid conversions require canonical provider evidence; checkout clicks alone are not purchases.','small'));
+  }
+  const offset=filters.offset||0;if(offset>0)output.append(button('Previous 100',()=>void loadMemberActivity(root,section,{...filters,offset:Math.max(0,offset-100)})));
+  if(offset+report.members.length<report.totalMembers)output.append(button('Next 100',()=>void loadMemberActivity(root,section,{...filters,offset:offset+100})));
+ }catch{if(!current())return;output.replaceChildren();heading(output,'Report unavailable','No account or activity figures are estimated. Your saved data is unchanged.');output.append(button('Retry report',()=>void loadMemberActivity(root,section,filters)));}
 }
 
 function renderMembership(root){

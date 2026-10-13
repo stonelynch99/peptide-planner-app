@@ -1,4 +1,6 @@
 import MembershipPanel from './src/cloud/MembershipAccessPanel';
+import {useAccountOnboarding} from './src/cloud/use-account-onboarding';
+import {useMemberActivity,recordActivity} from './src/cloud/member-activity';
 import {useMembershipAccess} from './src/cloud/use-membership-access';
 import {accessIsCurrent,canTrackCompound,effectiveTrackingStore,membershipChangeError,membershipStartMode,membershipSetupGate} from './src/cloud/membership-access';
 import {useQuietRelease} from './src/quiet-release';
@@ -8,7 +10,9 @@ import {enableActivePlanReminders} from './src/reminder-projection';
 import {setReminderAccount} from './src/reminder-browser';
 import {FeedbackAttachments} from './src/cloud/FeedbackAttachments';
 import {feedbackDeadline,saveFeedbackDraft,pendingFeedbackDrafts,restoreFeedbackShots,type FeedbackDraft,type Screenshot} from './src/cloud/feedback-attachments';
-import {CloudDataPanel,useAutomaticCloudSync} from './src/cloud/CloudDataPanel';
+import {PrimaryRecoveryPanel} from './src/cloud/PrimaryRecoveryPanel';
+import {AccountDataControls} from './src/cloud/CloudDataPanel';
+import {usePrimaryBackup} from './src/cloud/use-primary-backup';
 import {BetaAccountPanel,BetaDashboard,ReferralsRewardsPanel,useBetaAccount} from './src/cloud/BetaAccount';
 import {acknowledgeCloudConsent,betaAdminAccess,cloudConfig,submitBetaFeedback,setBetaAnalyticsConsent,trackBetaAnalytics} from './src/cloud/client';
 import ActivePeptideEditor from './src/ActivePeptideEditor';
@@ -180,32 +184,19 @@ export default function App() {
   },[screen,feedbackMessage,feedbackSent]);
   const [betaConsentAt,setBetaConsentAt]=useState<string|null>(null);
   const [betaConsentChecked,setBetaConsentChecked]=useState(false);
-  const [analyticsConsent,setAnalyticsConsent]=useState(false);
+  const accountSetup=useAccountOnboarding(betaAccount.state.status==='eligible'?betaAccount.state.userId??null:null);
+  const analyticsConsent=accountSetup.value?.analyticsConsent===true;
+  const analyticsDelivery=useMemberActivity(betaAccount.state.status==='eligible'?betaAccount.state.userId??null:null,analyticsConsent,membershipOpen?'membership':screen);
   const [betaAdmin,setBetaAdmin]=useState(false);
-  const analyticsSessionTracked=useRef(false);
-  const trackedPlanCount=useRef<number|null>(null);
-  useEffect(()=>{AsyncStorage.getItem('pepplan.beta-consent.v1').then(value=>setBetaConsentAt(value||null)).catch(()=>{});},[]);
+  const trackedPlans=useRef<{owner:string|null;states:Map<string,boolean>}|null>(null);
+  const previousSetup=useRef<{owner:string;completed:boolean}|null>(null);
+  useEffect(()=>{const v=accountSetup.value;if(!v){previousSetup.current=null;return;}const prior=previousSetup.current;previousSetup.current={owner:v.userId,completed:v.completed};if(prior?.owner===v.userId&&!prior.completed&&v.completed&&v.analyticsConsent)void recordActivity('onboarding_completed',{screen:'welcome'});},[accountSetup.value]);
+  useEffect(()=>{if(upgradePrompt)void recordActivity('pro_prompt',{screen:'membership'});},[upgradePrompt]);
   useEffect(()=>{
-    if(betaAccount.state.status!=='eligible'){setBetaAdmin(false);return;}
-    betaAdminAccess().then(setBetaAdmin).catch(()=>setBetaAdmin(false));
+    let active=true;setBetaAdmin(false);
+    if(betaAccount.state.status==='eligible')betaAdminAccess().then(v=>{if(active)setBetaAdmin(v);}).catch(()=>{});
+    return()=>{active=false;};
   },[betaAccount.state.status,betaAccount.state.userId]);
-  useEffect(()=>{
-    if(betaAccount.state.status!=='eligible'){setAnalyticsConsent(false);analyticsSessionTracked.current=false;return;}
-    setBetaAnalyticsConsent(true).then(()=>setAnalyticsConsent(true)).catch(()=>setAnalyticsConsent(false));
-  },[betaAccount.state.status,betaAccount.state.userId]);
-  useEffect(()=>{
-    if(betaAccount.state.status!=='eligible'||!analyticsConsent)return;
-    if(!analyticsSessionTracked.current){analyticsSessionTracked.current=true;void trackBetaAnalytics('session_started');}
-    void trackBetaAnalytics('screen_viewed',screen);
-    if(screen==='guide')void trackBetaAnalytics('plan_builder_started');
-  },[betaAccount.state.status,betaAccount.state.userId,analyticsConsent,screen]);
-  useEffect(()=>{
-    if(betaAccount.state.status!=='eligible'||!analyticsConsent)return;
-    let startedAt=Date.now(),measuring=true;
-    const flush=()=>{if(!measuring)return;measuring=false;const seconds=Math.floor((Date.now()-startedAt)/1000);if(seconds>=1)void trackBetaAnalytics('screen_time',screen,seconds);};
-    const subscription=AppState.addEventListener('change',next=>{if(next==='active'){startedAt=Date.now();measuring=true;}else flush();});
-    return()=>{flush();subscription.remove();};
-  },[betaAccount.state.status,betaAccount.state.userId,analyticsConsent,screen]);
   useEffect(()=>{AsyncStorage.getItem("pepplan.school.favorites").then(value=>{if(value)setSchoolFavorites(JSON.parse(value));}).catch(()=>{});},[]);
   const toggleSchoolFavorite=(id:string)=>setSchoolFavorites(current=>{const next=current.includes(id)?current.filter(item=>item!==id):[...current,id];AsyncStorage.setItem("pepplan.school.favorites",JSON.stringify(next)).catch(()=>{});return next;});
 
@@ -219,36 +210,41 @@ export default function App() {
   }))};
   const trackingStore=effectiveTrackingStore(saved.store,membership.access);
   const [cloudGuideOpen,setCloudGuideOpen]=useState(false);
-  useEffect(()=>{
-    if(betaAccount.state.status!=='eligible'||!saved.ready||!getActivePlans(saved.store).length)return;
-    const key='pepplan.cloud-guide.seen.v1:'+betaAccount.state.userId;
-    AsyncStorage.getItem(key).then(value=>{if(!value)setCloudGuideOpen(true);}).catch(()=>{});
-  },[betaAccount.state.status,betaAccount.state.userId,saved.ready]);
-  const closeCloudGuide=()=>{setCloudGuideOpen(false);if(betaAccount.state.status==='eligible')AsyncStorage.setItem('pepplan.cloud-guide.seen.v1:'+betaAccount.state.userId,'seen').catch(()=>{});};
-  const cloudSync=useAutomaticCloudSync({eligible:betaAccount.state.status==='eligible',userId:betaAccount.state.userId??null,store:saved.store,ready:saved.ready&&!saved.loadFailed&&!saved.error,saving:saved.saving,replaceStore:saved.recover,onNeedsAttention:()=>setCloudGuideOpen(true)});
+  const [primaryRecoveryBusy,setPrimaryRecoveryBusy]=useState(false);
+  const closeCloudGuide=()=>{if(!primaryRecoveryBusy)setCloudGuideOpen(false);};
+  const cloudSync=usePrimaryBackup({userId:betaAccount.state.status==='eligible'?betaAccount.state.userId??null:null,store:saved.store,ready:saved.ready&&!saved.loadFailed&&!saved.error&&!primaryRecoveryBusy,saving:saved.saving,consent:accountSetup.value?.backupConsent===true,onVerified:()=>void membership.refresh()});
   const [onboarding,setOnboarding]=useState<OnboardingProfile|null|undefined>(undefined);
   const [experience,setExperience]=useState<Experience|null>(null);
   const [firstGoal,setFirstGoal]=useState<FirstGoal|null>(null);
+  const [backupConsentChecked,setBackupConsentChecked]=useState(false);
+  const [analyticsChecked,setAnalyticsChecked]=useState(false);
   const [restartingOnboarding,setRestartingOnboarding]=useState(false);
-  useEffect(()=>{AsyncStorage.getItem("pepplan.onboarding.v1").then(value=>setOnboarding(value?JSON.parse(value):null)).catch(()=>setOnboarding(null));},[]);
+  const setupIdentity=useRef<string|null>(null);
+  useEffect(()=>{
+    setupIdentity.current=null;
+    setOnboarding(undefined);setExperience(null);setFirstGoal(null);setBackupConsentChecked(false);setAnalyticsChecked(false);
+  },[betaAccount.state.userId]);
+  useEffect(()=>{
+    const v=accountSetup.value;if(!v||setupIdentity.current===v.userId)return;
+    setupIdentity.current=v.userId;setExperience(v.experience);setFirstGoal(v.goal);
+    setBackupConsentChecked(v.backupConsent);setAnalyticsChecked(v.analyticsConsent);
+    setOnboarding(v.completed&&v.experience&&v.goal?{experience:v.experience,goal:v.goal}:null);
+    if(!v.completed){setMembershipOpen(false);setScreen('welcome');}
+  },[accountSetup.value]);
+  useEffect(()=>{
+    const v=accountSetup.value;if(!v||v.completed||accountSetup.saving||(!experience&&!firstGoal))return;
+    if(v.experience===experience&&v.goal===firstGoal)return;
+    const timer=setTimeout(()=>void accountSetup.save({experience,goal:firstGoal}),500);
+    return()=>clearTimeout(timer);
+  },[experience,firstGoal,accountSetup.value,accountSetup.saving]);
   const onboardingDestination=(goal:FirstGoal):Screen=>goal==="learn"||goal==="research"?"school":"guide";
-  const finishOnboarding=(profile:OnboardingProfile,destination?:Screen)=>{const acceptedAt=new Date().toISOString();setRestartingOnboarding(false);setOnboarding(profile);setBetaConsentAt(acceptedAt);AsyncStorage.multiSet([["pepplan.onboarding.v1",JSON.stringify(profile)],["pepplan.beta-consent.v1",acceptedAt]]).catch(()=>{});if(analyticsConsent)void trackBetaAnalytics("onboarding_completed");setScreen(destination??onboardingDestination(profile.goal));};
-  const confirmSkipOnboarding=()=>Alert.alert(
-    "Skip Quick Start?",
-    "Skipping the questions continues into EZPep and accepts the beta terms and limited usage analytics described on this screen. You can restart Quick Start from More → Settings → Quick Start.",
-    [
-      {text:"Keep going",style:"cancel"},
-      {text:"Skip for now",onPress:()=>finishOnboarding({experience:"familiar",goal:"setup"},"tracker")},
-    ],
-  );
-  const restartOnboarding=()=>Alert.alert(
-    "Restart Quick Start?",
-    "This will reopen the welcome questions. Your saved plans, history and settings will not be changed.",
-    [
-      {text:"Cancel",style:"cancel"},
-      {text:"Restart",onPress:()=>{setRestartingOnboarding(true);setExperience(null);setFirstGoal(null);setOnboarding(null);AsyncStorage.removeItem("pepplan.onboarding.v1").catch(()=>{});setScreen("welcome");}},
-    ],
-  );
+  const finishOnboarding=async(profile:OnboardingProfile,destination?:Screen)=>{
+    if(!await accountSetup.save({...profile,completed:true,backupConsent:backupConsentChecked,analyticsConsent:analyticsChecked}))return;
+    setRestartingOnboarding(false);setOnboarding(profile);setBetaConsentAt(new Date().toISOString());
+    setScreen(destination??onboardingDestination(profile.goal));
+  };
+  const confirmSkipOnboarding=()=>{setScreen('tracker');};
+  const restartOnboarding=()=>{setRestartingOnboarding(true);setOnboarding(null);setScreen('welcome');};
   const exportLocalBackup=async()=>{
     const exportedAt=new Date().toISOString(),plannerUpdatedAt=plannerChangedAt(saved.store);
     const payload=JSON.stringify({kind:'ezpep-planner-backup',backupVersion:1,exportedAt,plannerUpdatedAt,store:JSON.parse(encodePlannerStore(saved.store))});
@@ -345,11 +341,15 @@ export default function App() {
   const editing=editingActive&&!!currentEdit&&['activeEditor','plan','review','schedule','calc'].includes(screen);
   const plans=getActivePlans(trackingStore);
   useEffect(()=>{
-    if(!saved.ready){trackedPlanCount.current=null;return;}
-    if(trackedPlanCount.current===null){trackedPlanCount.current=plans.length;return;}
-    if(plans.length>trackedPlanCount.current&&analyticsConsent===true)void trackBetaAnalytics('plan_started');
-    trackedPlanCount.current=plans.length;
-  },[saved.ready,plans.length,analyticsConsent]);
+    if(!saved.ready){trackedPlans.current=null;return;}
+    const owner=betaAccount.state.userId??null,states=new Map(plans.map(p=>[p.id,!p.pausedAt]));
+    const before=trackedPlans.current;trackedPlans.current={owner,states};
+    if(!before||before.owner!==owner||!analyticsConsent)return;
+    for(const [id,tracking] of states){
+      if(!before.states.has(id))void recordActivity('plan_setup_saved',{screen:'plans'});
+      if(tracking&&before.states.get(id)!==true)void recordActivity('plan_started',{screen:'tracker'});
+    }
+  },[saved.ready,plans,betaAccount.state.userId,analyticsConsent]);
   const focused=plans.find(p=>p.id===selectedPlanId)??saved.store.archives.find(p=>p.id===selectedPlanId)??plans[0]??null;
   const scopedStore={...trackingStore,active:focused,draft:editing?currentEdit!.draft:screen==='planDetail'?null:saved.store.draft};
   const persistEdit=(edit:ActiveEdit)=>saved.update(old=>({...old,activeEdit:edit})).then(()=>setSessionEdit(null));
@@ -409,7 +409,7 @@ export default function App() {
   useEffect(()=>{
     if(!saved.ready||screen!=="welcome"||onboarding===undefined||restartingOnboarding)return;
     if(onboarding){setScreen("tracker");return;}
-    if(plans.length||saved.store.draft){const profile:OnboardingProfile={experience:plans.length?"experienced":"familiar",goal:plans.length?"track":"setup"};setOnboarding(profile);AsyncStorage.setItem("pepplan.onboarding.v1",JSON.stringify(profile)).catch(()=>{});setScreen("tracker");}
+    // Only this account's saved onboarding completion can skip these questions.
   },[saved.ready,onboarding,plans.length,restartingOnboarding,saved.store.draft]);
 
   const renderWelcome=()=>(
@@ -429,8 +429,11 @@ export default function App() {
       <View style={styles.goalGrid}>{([
         ["learn","Learn the basics"],["research","Research a peptide"],["setup","Set up an existing routine"],["track","Track a routine underway"]
       ] as const).map(([value,label])=><Pressable accessibilityRole="radio" accessibilityState={{selected:firstGoal===value}} key={value} onPress={()=>setFirstGoal(value)} style={[styles.goalCard,firstGoal===value&&styles.goalCardSelected]}><Text style={[styles.goalText,firstGoal===value&&styles.goalTextSelected]}>{label}</Text></Pressable>)}</View>
-      <View style={styles.notice}><Text style={styles.noticeText}>By continuing, you accept the private beta terms and limited product analytics used to measure sessions, feature use and time spent by app area. Planner content—including peptide names, doses, schedules, calculations, inventory, history and notes—is not included.</Text></View>
-      {experience&&firstGoal&&<AppButton label="Accept and show me where to begin" onPress={()=>finishOnboarding({experience,goal:firstGoal})}/>}
+      <View style={styles.notice}><Text style={styles.noticeText}>This device saves your planner first. EZPep backs it up automatically. Restore a backup only when recovering or replacing your device.</Text></View>
+      <Pressable accessibilityRole="checkbox" accessibilityState={{checked:backupConsentChecked}} onPress={()=>setBackupConsentChecked(v=>!v)} style={styles.choiceCard}><Text style={styles.choiceDetail}>{backupConsentChecked?'✓':'○'} I agree to save a private cloud backup of my planner.</Text></Pressable>
+      <Pressable accessibilityRole="checkbox" accessibilityState={{checked:analyticsChecked}} onPress={()=>setAnalyticsChecked(v=>!v)} style={styles.choiceCard}><Text style={styles.choiceDetail}>{analyticsChecked?'✓':'○'} Share limited product analytics: app interactions, courses and foreground time. Peptide names, doses, schedules, inventory, history and notes are excluded. This is optional.</Text></Pressable>
+      {!!accountSetup.error&&<Text accessibilityLiveRegion="polite" style={styles.noticeText}>{accountSetup.error}</Text>}
+      {experience&&firstGoal&&<AppButton label={accountSetup.saving?'Saving…':'Continue'} disabled={accountSetup.loading||accountSetup.saving||!accountSetup.value} onPress={()=>void finishOnboarding({experience,goal:firstGoal})}/>}
       <Pressable accessibilityRole="button" accessibilityLabel="Skip introduction" onPress={confirmSkipOnboarding} style={styles.skipButton}><Text style={styles.crossLinkText}>Skip for now</Text></Pressable>
       <Text style={styles.onboardingSafety}>EZPep Planner organizes educational research information and routines you enter. It does not select a peptide or prescribe a dose.</Text>
     </ScrollView>
@@ -831,12 +834,13 @@ export default function App() {
   if(saved.store.draft||saved.store.activeEdit||currentEdit||editingActive)updateBlockers.push('a plan draft or edit is open');
   if(feedbackSubmitting||feedbackBusy.current||feedbackText||feedbackShots.length||feedbackPending.length)updateBlockers.push('feedback is unfinished or still uploading');
   if(importing||importPreview)updateBlockers.push('a data import is open');
-  if(restoreCandidate||restoringBackup)updateBlockers.push('a backup recovery is open');
+  if(restoreCandidate||restoringBackup||primaryRecoveryBusy)updateBlockers.push('a backup recovery is open');
+  if(accountSetup.saving)updateBlockers.push('account setup is saving');
   if(cloudGuideOpen)updateBlockers.push('the cloud-copy review is open');
   if(membershipOpen)updateBlockers.push('the account screen is open');
   if(betaAccount.state.recovery)updateBlockers.push('password recovery is open');
   if(!['tracker','plans','more','school','settings'].includes(screen))updateBlockers.push('finish the current planning screen');
-  const appUpdates=useQuietRelease(saved.ready&&courseWrites===0&&!saved.loadFailed&&!saved.error&&!saved.saving&&betaAccount.state.status==='eligible'&&(cloudSync.state.kind==='upToDate'||cloudSync.state.kind==='local')&&!saved.store.draft&&!saved.store.activeEdit&&!currentEdit&&!editingActive&&!feedbackSubmitting&&!feedbackBusy.current&&!feedbackText&&!feedbackShots.length&&!feedbackPending.length&&!importing&&!importPreview&&!restoreCandidate&&!restoringBackup&&!cloudGuideOpen&&!membershipOpen&&!betaAccount.state.recovery&&['tracker','plans','more','school','settings'].includes(screen),betaAccount.state.userId??null,saved.store,updateBlockers);
+  const appUpdates=useQuietRelease(saved.ready&&courseWrites===0&&!primaryRecoveryBusy&&!accountSetup.saving&&!saved.loadFailed&&!saved.error&&!saved.saving&&betaAccount.state.status==='eligible'&&(cloudSync.state.kind==='upToDate'||cloudSync.state.kind==='local')&&!saved.store.draft&&!saved.store.activeEdit&&!currentEdit&&!editingActive&&!feedbackSubmitting&&!feedbackBusy.current&&!feedbackText&&!feedbackShots.length&&!feedbackPending.length&&!importing&&!importPreview&&!restoreCandidate&&!restoringBackup&&!cloudGuideOpen&&!membershipOpen&&!betaAccount.state.recovery&&['tracker','plans','more','school','settings'].includes(screen),betaAccount.state.userId??null,saved.store,updateBlockers);
 
   if(!saved.ready)return <SafeAreaProvider><SafeAreaView style={styles.safe}><Text style={styles.detailTitle}>Opening your saved plan…</Text></SafeAreaView></SafeAreaProvider>;
   if(saved.loadFailed)return <SafeAreaProvider><SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.welcomeContent}>
@@ -853,7 +857,7 @@ export default function App() {
   return (
     <SafeAreaProvider><SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-      {(membership.access?.tier==='free'||membership.status==='unavailable')&&<View testID="membership-tracking-notice" style={{paddingHorizontal:20,paddingVertical:8,backgroundColor:COLORS.paleBlue}}><Text style={styles.smallBadge}>{membership.access?.tier==='free'?(membership.access.selectedCompoundId?'Free tracks your selected peptide. Your other saved plans and history remain available.':getActivePlans(saved.store).length?'Your first setup is saved. Finish Free setup to choose your peptide and start tracking.':'Your Free account includes one peptide. Set up your first plan to get started.'):'Tracking needs membership verification. Your plans, history and backups are preserved.'}</Text><Pressable accessibilityRole="button" accessibilityLabel={membership.access?.tier==='free'?(membership.access.selectedCompoundId?'Choose Free peptide':getActivePlans(saved.store).length?'Finish Free setup':'Set up your first peptide'):'Refresh tracking access'} onPress={()=>{if(membership.access?.tier!=='free'){void membership.refresh();return;}if(!getActivePlans(saved.store).length&&!membership.access.selectedCompoundId){beginNewPlan();return;}if(!membership.access.selectedCompoundId&&cloudSync.state.kind==='setup'){setCloudGuideOpen(true);return;}setMembershipOpen(true);}}><Text style={styles.back}>{membership.access?.tier==='free'?(membership.access.selectedCompoundId?'Choose Free peptide':getActivePlans(saved.store).length?'Finish Free setup':'Set up your first peptide'):'Refresh tracking access'}</Text></Pressable>{membership.access?.tier==='free'&&<Pressable accessibilityRole="button" accessibilityLabel="Upgrade to Pro" onPress={()=>setMembershipOpen(true)} style={{minHeight:44,justifyContent:'center'}}><Text style={styles.back}>Upgrade to Pro ›</Text></Pressable>}</View>}
+      {(membership.access?.tier==='free'||membership.status==='unavailable')&&<View testID="membership-tracking-notice" style={{paddingHorizontal:20,paddingVertical:8,backgroundColor:COLORS.paleBlue}}><Text style={styles.smallBadge}>{membership.access?.tier==='free'?(membership.access.selectedCompoundId?'Free tracks your selected peptide. Your other saved plans and history remain available.':getActivePlans(saved.store).length?(accountSetup.value?.backupConsent?'Your first setup is saved. EZPep is confirming its automatic backup and Free tracking access.':'Your first setup is saved on this device. Allow automatic backup in Backup & data to confirm Free tracking access.'):'Your Free account includes one peptide. Set up your first plan to get started.'):'Tracking needs membership verification. Your plans, history and backups are preserved.'}</Text><Pressable accessibilityRole="button" accessibilityLabel={membership.access?.tier==='free'?(membership.access.selectedCompoundId?'Choose Free peptide':getActivePlans(saved.store).length?'Finish Free setup':'Set up your first peptide'):'Refresh tracking access'} onPress={()=>{if(membership.access?.tier!=='free'){void membership.refresh();return;}if(!getActivePlans(saved.store).length&&!membership.access.selectedCompoundId){beginNewPlan();return;}if(!membership.access.selectedCompoundId){if(!accountSetup.value?.backupConsent){setSettingsSection('data');setScreen('settings');}else{void cloudSync.syncNow(true);void membership.refresh();}return;}setMembershipOpen(true);}}><Text style={styles.back}>{membership.access?.tier==='free'?(membership.access.selectedCompoundId?'Choose Free peptide':getActivePlans(saved.store).length?'Finish Free setup':'Set up your first peptide'):'Refresh tracking access'}</Text></Pressable>{membership.access?.tier==='free'&&<Pressable accessibilityRole="button" accessibilityLabel="Upgrade to Pro" onPress={()=>setMembershipOpen(true)} style={{minHeight:44,justifyContent:'center'}}><Text style={styles.back}>Upgrade to Pro ›</Text></Pressable>}</View>}
       <View style={styles.topLine}>
         <View style={styles.brandLockup}><Image accessibilityLabel="EZPep Planner" source={{uri:EZPEP_LOCKUP_DATA_URI}} resizeMode="contain" style={styles.brandLockupImage}/></View>
         <View style={{flexDirection:"row",alignItems:"center",gap:4}}><Pressable accessibilityRole="button" accessibilityLabel="Profile" onPress={()=>setScreen("profile")} style={{width:36,minHeight:44,alignItems:"center",justifyContent:"center"}}><Svg width={20} height={22} viewBox="0 0 24 24"><Circle cx={12} cy={7} r={4} fill="none" stroke={COLORS.ink} strokeWidth={1.7}/><Path d="M 4 22 L 4 19 C 4 12 20 12 20 19 L 20 22 Z" fill="none" stroke={COLORS.ink} strokeWidth={1.7}/></Svg></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Settings" onPress={()=>openSettings()} style={{width:36,minHeight:44,alignItems:"center",justifyContent:"center"}}><Text style={{fontSize:20,color:COLORS.ink}}>⚙</Text></Pressable></View>
@@ -865,7 +869,7 @@ export default function App() {
       {discardEdits&&<View style={{padding:16,backgroundColor:COLORS.paleBlue}}><Text style={styles.helper}>{saved.store.activeEdit?'Discard saved edits? Active plans and history will stay unchanged.':'Close the editor? You have not changed this plan.'}</Text><AppButton label={saved.store.activeEdit?'Confirm discard edits':'Close editor'} onPress={()=>discardActiveEdits().then(()=>setDiscardEdits(false))}/><AppButton label={saved.store.activeEdit?'Keep edits':'Keep editor open'} secondary onPress={()=>setDiscardEdits(false)}/></View>}
       {restoreCandidate&&<Modal transparent animationType="fade" onRequestClose={()=>{if(!restoringBackup)setRestoreCandidate(null);}}><View style={styles.importModalShade}><View style={styles.importModalCard}><Text style={styles.sourceClass}>{restoreStatus.startsWith('Backup restored successfully')?'RESTORE COMPLETE':'RESTORE PREVIEW'}</Text><Text style={styles.importModalTitle}>{restoreStatus.startsWith('Backup restored successfully')?'Backup restored':'Replace this device’s planner data?'}</Text><Text style={styles.nextText}>{restoreCandidate.plans} active plans · {restoreCandidate.archives} archived plans · {restoreCandidate.history} saved history entries</Text><View style={styles.restoreDates}><Text style={styles.smallBadge}>File: {restoreCandidate.fileName}</Text><Text style={styles.smallBadge}>Backup file saved: {backupDateLabel(restoreCandidate.fileSavedAt)}</Text><Text style={styles.smallBadge}>Latest planner activity in backup: {backupDateLabel(restoreCandidate.plannerUpdatedAt)}</Text><Text style={styles.smallBadge}>Latest planner activity on this device: {backupDateLabel(plannerChangedAt(saved.store))}</Text></View>{!!restoreStatus&&<Text accessibilityLiveRegion="polite" style={restoreStatus.startsWith('Backup was not')?styles.restoreError:styles.restoreGood}>{restoreStatus}</Text>}{restoreStatus.startsWith('Backup restored successfully')?<AppButton label="View restored planner" onPress={()=>{setRestoreCandidate(null);setRestoreStatus('');setScreen('plans');}}/>:<><Text style={styles.smallBadge}>{restoreCandidate.plannerUpdatedAt&&plannerChangedAt(saved.store)&&Date.parse(restoreCandidate.plannerUpdatedAt)>Date.parse(plannerChangedAt(saved.store)!)?'This backup contains the newer recorded planner activity.':'Review these dates carefully. If both copies changed, keep the one you recognize rather than relying only on a timestamp.'} A private pre-restore recovery copy is created first.</Text><AppButton label={restoringBackup?'Restoring backup…':'Confirm restore backup'} disabled={restoringBackup} onPress={restoreLocalBackup}/><AppButton label="Cancel restore" disabled={restoringBackup} secondary onPress={()=>{setRestoreCandidate(null);setRestoreStatus('');}}/></>}</View></View></Modal>}
       <Modal visible={upgradePrompt} transparent animationType="fade" onRequestClose={()=>setUpgradePrompt(false)}><View style={styles.importModalShade}><View testID="free-upgrade-prompt" accessibilityViewIsModal style={styles.importModalCard}><Text style={styles.sourceClass}>MORE ROOM WITH PRO</Text><Text accessibilityRole="header" style={styles.importModalTitle}>Add your next peptide with Pro</Text><Text style={styles.nextText}>Ready to plan more? Pro lets you set up and track multiple peptides, with the full learning section included.</Text><Text style={styles.smallBadge}>Your Free peptide, saved plans and history stay safe. Upgrade whenever you’re ready to add your next peptide.</Text><AppButton label="Upgrade now to Pro" onPress={()=>{setUpgradePrompt(false);setMembershipOpen(true);}}/><AppButton label="Keep using Free" secondary onPress={()=>setUpgradePrompt(false)}/></View></View></Modal>
-      {cloudGuideOpen&&betaAccount.state.status==='eligible'&&<Modal transparent animationType="fade" onRequestClose={closeCloudGuide}><View style={styles.importModalShade}><ScrollView contentContainerStyle={styles.cloudGuideScroll}><CloudDataPanel key={betaAccount.state.userId!} guided onInitialCopy={()=>{if(membershipCurrent.current?.tier==='free'&&!membershipCurrent.current.selectedCompoundId){closeCloudGuide();setMembershipOpen(true);}}} store={saved.store} ready={saved.ready&&!saved.saving&&!saved.loadFailed&&!saved.error} userId={betaAccount.state.userId!} replaceStore={saved.recover} onCloudChanged={()=>void cloudSync.syncNow(true)}/><AppButton label="Done for now" secondary onPress={closeCloudGuide}/></ScrollView></View></Modal>}
+      {cloudGuideOpen&&betaAccount.state.status==='eligible'&&<Modal transparent animationType="fade" onRequestClose={closeCloudGuide}><View style={styles.importModalShade}><ScrollView contentContainerStyle={styles.cloudGuideScroll}><PrimaryRecoveryPanel key={betaAccount.state.userId!} store={saved.store} userId={betaAccount.state.userId!} replaceStore={saved.recover} onBusy={setPrimaryRecoveryBusy} onDone={()=>void cloudSync.syncNow(true)}/><AppButton label="Done for now" disabled={primaryRecoveryBusy} secondary onPress={closeCloudGuide}/></ScrollView></View></Modal>}
       <View key={screen==='schoolDetail'?screen+selected.id:screen} style={styles.main}>
         {screen === "welcome" && renderWelcome()}
         {screen === "school" && renderSchool()}
@@ -889,7 +893,18 @@ export default function App() {
         {(screen==='profile'||screen==='settings')&&<ScrollView contentContainerStyle={styles.scrollContent}>
  <Pressable accessibilityRole="button" onPress={()=>screen==='settings'&&settingsSection!=='home'?setSettingsSection('home'):setScreen('more')}><Text style={styles.back}>‹ {screen==='settings'&&settingsSection!=='home'?'Settings':'More'}</Text></Pressable>
  <Text style={styles.kicker}>{screen==='profile'?'ACCOUNT':'SETTINGS'}</Text><Text style={styles.detailTitle}>{screen==='profile'?'Your account':settingsSection==='home'?'Your settings':settingsSection==='data'?'Backup & data':settingsSection==='updates'?'App updates':settingsSection==='onboarding'?'Quick Start':'About EZPep'}</Text>
- {screen==='profile'?<><BetaAccountPanel account={betaAccount}/><AppButton label="Export local backup" secondary onPress={exportLocalBackup}/><AppButton label="Cloud backup and device transfer" secondary onPress={()=>setCloudGuideOpen(true)}/>{betaAccount.state.status==='eligible'&&<CloudDataPanel key={betaAccount.state.userId!} store={saved.store} ready={saved.ready&&!saved.saving&&!saved.loadFailed&&!saved.error} userId={betaAccount.state.userId!} replaceStore={saved.recover} onCloudChanged={()=>void cloudSync.syncNow(true)}/>}</>:<>
+ {screen==='profile'?<><BetaAccountPanel account={betaAccount}/>
+ {betaAccount.state.status==='eligible'&&<AccountDataControls key={betaAccount.state.userId!} ready={true} userId={betaAccount.state.userId!}/>}
+ <Text accessibilityLiveRegion="polite" style={styles.lessonTitle}>{cloudSync.state.label}</Text><Text style={styles.nextText}>{cloudSync.state.detail}</Text>
+ {accountSetup.value&&<View style={styles.lessonCard}>
+ <Text style={styles.lessonTitle}>Backup and activity choices</Text>
+ <Text style={styles.nextText}>This device saves your planner first. EZPep backs it up automatically. Restore a backup only when recovering or replacing your device.</Text>
+ <AppButton secondary disabled={accountSetup.saving} label={accountSetup.value.backupConsent?'Turn off automatic backup':'Allow automatic cloud backup'} onPress={()=>{const v=accountSetup.value;if(v)void accountSetup.save({...v,backupConsent:!v.backupConsent});}}/>
+ <Text accessibilityLiveRegion="polite" style={styles.nextText}>{analyticsDelivery==='consent_not_granted'?'Activity sharing is off.':analyticsDelivery==='upload_pending'?'Activity upload pending.':analyticsDelivery==='report_unavailable'?'Activity reporting is unavailable; your planner still works.':'Activity uploads are current. This does not imply activity on other devices.'}</Text>
+ <Text style={styles.nextText}>Optional activity sharing reports app screens, fixed lesson identifiers and interactions, not your peptide names, doses, planner contents or passwords.</Text>
+ <AppButton secondary disabled={accountSetup.saving} label={accountSetup.value.analyticsConsent?'Stop sharing activity':'Allow activity sharing'} onPress={()=>{const v=accountSetup.value;if(v)void accountSetup.save({...v,analyticsConsent:!v.analyticsConsent});}}/>
+ {accountSetup.error&&<Text accessibilityRole="alert" style={styles.nextText}>{accountSetup.error}</Text>}
+ </View>}<AppButton label="Export local backup" secondary onPress={exportLocalBackup}/><AppButton label="Cloud backup and device transfer" secondary onPress={()=>setCloudGuideOpen(true)}/>{betaAccount.state.status==='eligible'&&<PrimaryRecoveryPanel key={betaAccount.state.userId!} store={saved.store} userId={betaAccount.state.userId!} replaceStore={saved.recover} onBusy={setPrimaryRecoveryBusy} onDone={()=>void cloudSync.syncNow(true)}/>}</>:<>
  {settingsSection==='home'&&<>
  <Text style={styles.detailMeta}>Choose one area. Your plans and account stay separate.</Text>
  {([{key:'data',title:'Backup & data',detail:'Import, export and restore your planner'},{key:'updates',title:'App updates',detail:'Check the installed version safely'},{key:'onboarding',title:'Quick Start',detail:'Revisit the welcome guide'},{key:'about',title:'About EZPep',detail:'App information and planning controls'}] as const).map(item=><Pressable key={item.key} accessibilityRole="button" onPress={()=>setSettingsSection(item.key)} style={styles.moreRow}><View style={{flex:1}}><Text style={styles.planOptionTitle}>{item.title}</Text><Text style={styles.smallBadge}>{item.detail}</Text></View><Text style={styles.linkArrow}>›</Text></Pressable>)}
@@ -911,7 +926,7 @@ export default function App() {
         {(screen==='history'||(screen==='tracker'&&!!plans.length))&&!saved.loadFailed&&<AggregateTracker plans={plans} archives={saved.store.archives} update={saved.update} initialTab={screen==='history'?'History':'Today'} onOpen={openPlan} onEdit={editPlan}/>}
         {screen==='inventory'&&!saved.loadFailed&&<MyPlans inventory canResume={compoundId=>canTrackCompound(membership.access,compoundId)} store={trackingStore} update={saved.update} onOpen={id=>editPlan(id,'Inventory')} onEdit={editPlan} onHistory={id=>{setSelectedPlanId(id);setScreen('planHistory');}} onDraft={()=>setScreen('review')} onGuide={beginNewPlan}/>}
         {screen==='reminders'&&Platform.OS==='web'&&!saved.loadFailed&&<ReminderPanel plans={plans} archives={saved.store.archives} onEnableAll={async()=>{let enabled:ReturnType<typeof getActivePlans>=[];await saved.update(old=>{const allowed=new Set(getActivePlans(old).filter(plan=>canTrackCompound(membershipCurrent.current,plan.compoundId)&&!plan.pausedAt).map(plan=>plan.id));const next={...old,activePlans:getActivePlans(old).map(plan=>allowed.has(plan.id)?{...plan,reminderEnabled:true}:plan)};next.active=next.activePlans[0]??null;enabled=getActivePlans(effectiveTrackingStore(next,membershipCurrent.current));return next;});return enabled;}}/>}
-        {(["plan","planDetail","planInventory","review","schedule","calc","planTracker","planHistory",...(Platform.OS!=='web'?['reminders']:[])] as Screen[]).includes(screen) && !saved.loadFailed && <Workspace screen={(screen==='planDetail'?'plan':screen==='planInventory'?'inventory':screen==='planTracker'?'tracker':screen==='planHistory'?'history':screen) as any} navigate={workspaceNavigate} store={scopedStore} update={scopedUpdate} editing={editing?{onSave:saveActiveEdits,supply:currentEdit!.supplyVials,onSupplyChange:value=>persistEdit({...currentEdit!,supplyVials:value}).catch(()=>{})}:undefined} startMode={membershipStartMode(saved.store,membership.access,saved.store.draft?.compoundId||'')} beforeStart={async(mode,compoundId)=>{const access=membershipCurrent.current;if(!accessIsCurrent(access))throw Error('Membership changed. Refresh and review this setup again.');if(mode==='selectionRequired'){if(cloudSync.state.kind==='setup')setCloudGuideOpen(true);else setMembershipOpen(true);return false;}if(access?.tier==='free'&&access.selectedCompoundId&&access.selectedCompoundId!==compoundId){setUpgradePrompt(true);return false;}if(mode==='upgradeRequired'||mode==='start'&&!canTrackCompound(access,compoundId)||mode==='saveForSelection'&&(!access||access.tier!=='free'))throw Error('Membership changed. Refresh and review this setup again.');}} onStarted={()=>{setScreen("plans");if(membership.access?.tier==='free'&&saved.store.draft&&!canTrackCompound(membership.access,saved.store.draft.compoundId))setCloudGuideOpen(true);}} onDiscard={editing?discardActiveEdits:async()=>{const compound=compounds.find(c=>c.id===saved.store.draft?.compoundId);await saved.update(old=>({...old,draft:null}));if(compound)setSelected(compound);setScreen("detail");}} onGuide={()=>setScreen("guide")}/>}
+        {(["plan","planDetail","planInventory","review","schedule","calc","planTracker","planHistory",...(Platform.OS!=='web'?['reminders']:[])] as Screen[]).includes(screen) && !saved.loadFailed && <Workspace screen={(screen==='planDetail'?'plan':screen==='planInventory'?'inventory':screen==='planTracker'?'tracker':screen==='planHistory'?'history':screen) as any} navigate={workspaceNavigate} store={scopedStore} update={scopedUpdate} editing={editing?{onSave:saveActiveEdits,supply:currentEdit!.supplyVials,onSupplyChange:value=>persistEdit({...currentEdit!,supplyVials:value}).catch(()=>{})}:undefined} startMode={membershipStartMode(saved.store,membership.access,saved.store.draft?.compoundId||'')} beforeStart={async(mode,compoundId)=>{const access=membershipCurrent.current;if(!accessIsCurrent(access))throw Error('Membership changed. Refresh and review this setup again.');if(mode==='selectionRequired'){if(cloudSync.state.kind==='setup')setCloudGuideOpen(true);else setMembershipOpen(true);return false;}if(access?.tier==='free'&&access.selectedCompoundId&&access.selectedCompoundId!==compoundId){setUpgradePrompt(true);return false;}if(mode==='upgradeRequired'||mode==='start'&&!canTrackCompound(access,compoundId)||mode==='saveForSelection'&&(!access||access.tier!=='free'))throw Error('Membership changed. Refresh and review this setup again.');}} onStarted={()=>{setScreen("plans");}} onDiscard={editing?discardActiveEdits:async()=>{const compound=compounds.find(c=>c.id===saved.store.draft?.compoundId);await saved.update(old=>({...old,draft:null}));if(compound)setSelected(compound);setScreen("detail");}} onGuide={()=>setScreen("guide")}/>}
       </View>
       {screen!=="welcome"&&<BottomNav active={screen==='activeEditor'?(currentEdit?.returnTo??'plans'):screen} setScreen={setScreen} />}
     </SafeAreaView></SafeAreaProvider>

@@ -49,14 +49,14 @@ test('taking or skipping events triggers targeted reminder cancellation',()=>{
 
 
 test('first-run guidance keeps navigation stable and Today becomes Start Here before a plan',()=>{
- for(const term of ['WELCOME TO EZPEP PLANNER','How familiar are you with peptides?','What would you like to do first?','Accept and show me where to begin','START HERE','Learn the essentials','Research a peptide','Build your plan','Review calculations','Start tracking'])assert.match(app,new RegExp(term));
+ for(const term of ['WELCOME TO EZPEP PLANNER','How familiar are you with peptides?','What would you like to do first?','Continue','START HERE','Learn the essentials','Research a peptide','Build your plan','Review calculations','Start tracking'])assert.match(app,new RegExp(term));
  assert.match(app,/screen==='tracker'&&!plans\.length/);
  assert.match(app,/screen==='tracker'&&!!plans\.length/);
  assert.match(app,/{ key: "school", label: "Learn" }/);
  assert.match(app,/{ key: "guide", label: "Build Plan" }/);
  assert.match(app,/screen!=="welcome"&&<BottomNav/);
  assert.match(app,/RECOMMENDED FIRST/);
- assert.match(app,/plans\.length\|\|saved\.store\.draft/);
+ assert.match(app,/accountSetup\.value/);assert.match(app,/completed:true,backupConsent:backupConsentChecked,analyticsConsent:analyticsChecked/);
  assert.match(app,/const recommended=onboarding\?\.goal===\"learn\"\?0:onboarding\?\.goal===\"research\"\?1:2/);
  assert.match(app,/draft\?\"Continue your plan\":\"Build your plan\"/);
  for(const label of ['YOUR PLANNER','YOUR ACCOUNT','HELP & FEEDBACK','Backup & data','App updates','Quick Start','About EZPep','Import data from another app','Restore EZPep backup','Export local backup','Your account & cloud'])assert.ok(app.includes(label),label+' remains available');
@@ -66,14 +66,16 @@ test('first-run guidance keeps navigation stable and Today becomes Start Here be
  assert.doesNotMatch(app,/Local storage, export and deletion controls/);
 });
 
-test('onboarding is local, optional, restartable and does not alter saved plans',()=>{
- assert.match(app,/pepplan\.onboarding\.v1/);
+test('onboarding is account-scoped, resumable, restartable and does not alter saved plans',()=>{
+ assert.match(app,/useAccountOnboarding/);assert.match(app,/accountSetup\.save/);
+ const hook=fs.readFileSync('app/src/cloud/use-account-onboarding.ts','utf8');
+ assert.match(hook,/identity.current!==userId/);assert.match(hook,/readAccountOnboarding\(userId\)/);assert.match(hook,/saveAccountOnboarding\(userId/);
  assert.match(app,/Skip for now/);
  assert.match(app,/Restart Quick Start Onboarding/);
- assert.match(app,/saved plans, history and settings will not be changed/);
+ assert.match(app,/saved plans, history and settings are preserved/);
  assert.match(app,/does not select a peptide or prescribe a dose/);
  assert.match(app,/goal==="learn"\|\|goal==="research"\?"school":"guide"/);
- assert.match(app,/goal:"setup"},"tracker"/);
+ assert.match(app,/const confirmSkipOnboarding=\(\)=>\{setScreen\('tracker'\);\}/);
 });
 
 test('plan tracker claims horizontal swipes before the vertical scroll container on web and native',()=>{

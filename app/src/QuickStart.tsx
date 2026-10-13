@@ -76,7 +76,7 @@ export function LearningPaths({progressOwner=null,onProgressWrite,onReadingChang
  const scope=courseProgressScope(progressOwner),visible=progress?.scope===scope?progress:null;
  const summary=ready&&visible?courseLearningSummary(visible):null;
  const reading=useRef({open,lesson});reading.current={open,lesson};
- useEffect(()=>{onReadingChange?.();},[open,lesson]);
+ useEffect(()=>{onReadingChange?.();let active=true;void import('./cloud/member-activity').then(({recordActivity,setActivityContent})=>{if(!active)return;const contentId=open?(lesson===null?open:open+':'+lesson):null;setActivityContent(contentId);if(contentId)void recordActivity(lesson===null?'course_viewed':'lesson_viewed',{screen:'school',contentId});}).catch(()=>{});return()=>{active=false;void import('./cloud/member-activity').then(({setActivityContent})=>setActivityContent(null)).catch(()=>{});};},[open,lesson]);
  useEffect(()=>{
   const active=createCourseProgressSession(plannerStorage,progressOwner);session.current=active;
   setProgress(null);setReady(false);setBusy(false);setMessage('');setOpen(null);setLesson(null);
@@ -92,7 +92,7 @@ export function LearningPaths({progressOwner=null,onProgressWrite,onReadingChang
  }
  async function finishLesson(id:string,index:number){
   const active=session.current;if(!active||!ready||busy)return;setBusy(true);setMessage('');onProgressWrite?.(1);
-  try{const next=await active.complete(id,index);if(session.current===active){setProgress(next);setMessage('Lesson completed and saved on this device.');const course=paths.find(p=>p.id===id);if(course&&reading.current.open===id&&reading.current.lesson===index&&index<course.lessons.length-1)setLesson(index+1);}}
+  try{const next=await active.complete(id,index);if(session.current===active){setProgress(next);setMessage('Lesson completed and saved on this device.');void import('./cloud/member-activity').then(({recordActivity})=>recordActivity('lesson_completed',{screen:'school',contentId:id+':'+index})).catch(()=>{});const course=paths.find(p=>p.id===id);if(course&&reading.current.open===id&&reading.current.lesson===index&&index<course.lessons.length-1)setLesson(index+1);}}
   catch{if(session.current===active)setMessage('Completion could not be saved. Your previous progress is preserved. Try again when storage is available.');}
   finally{onProgressWrite?.(-1);if(session.current===active)setBusy(false);}
  }

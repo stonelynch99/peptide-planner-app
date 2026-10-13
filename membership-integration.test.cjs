@@ -92,11 +92,12 @@ test('reviewed download: changed cloud payload with unchanged revision never app
 });
 
 function clientFixture({admitted=true,statusError=null,swap=false,privacySwap=false,requestStatus='pending'}={}){
- let id='one';const calls=[],fake={auth:{getUser:async()=>({data:{user:{id,email:'synthetic@example.invalid'}},error:null})},rpc:async(name,args)=>{
+ let id='one';const calls=[],fake={auth:{onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}}),getUser:async()=>({data:{user:{id,email:'synthetic@example.invalid'}},error:null})},rpc:async(name,args)=>{
   calls.push({name,args});
   if(name==='export_own_account'){if(privacySwap)id='two';return{data:{format:'account-export-v1',membership:{selection:null}},error:null};}
   if(name==='set_deletion_request'){if(privacySwap)id='two';return{data:requestStatus,error:null};}
   if(name==='accept_beta_invite')return{data:false,error:null};
+  if(name==='ezpep_enrollment_public_status')return{data:{enabled:false,schemaVersion:1},error:null};
   if(name==='membership_access_status_v2'){if(swap)id='two';return statusError?{data:null,error:statusError}:admitted?{data:evidence(),error:null}:{data:null,error:{code:'42501'}};}
   if(name==='membership_planner_read_v2')return{data:{planner:null,dataPreserved:true},error:null};
   if(name==='membership_planner_write_v2')return{data:{dataPreserved:true,revision:args.expected_revision+1,selectionRevision:args.expected_selection_revision},error:null};

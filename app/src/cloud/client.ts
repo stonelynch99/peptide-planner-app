@@ -22,6 +22,7 @@ async function restoreRecovery(){
     if(!code&&!rejected)return;
     // Accept callbacks only at the exact production origin/root. Strip sensitive URL material before awaiting.
     if(url.origin!=='https://app.ezpepplanner.com'||url.pathname!=='/')return;
+    pendingEnrollmentReferral();
     window.history.replaceState(null,'','/#membership');
     if(rejected||!code)throw Error('Recovery link is invalid or expired.');
     const {data,error}=await configured().auth.exchangeCodeForSession(code);
@@ -39,7 +40,7 @@ async function requireAccount(){
  return data.user;
 }
 export const authPort: AuthPort = {
-  async restore(){await restoreRecovery();const {data,error}=await configured().auth.getSession();if(error)throw error;return data.session?identity(data.session.user):null;},
+  async restore(){try{await restoreRecovery();}catch{ /* Invalid/cross-browser PKCE links fall back to normal password sign-in; never grant access. */ return null;}const {data,error}=await configured().auth.getSession();if(error)throw error;return data.session?identity(data.session.user):null;},
   async requestCode(email){const {error}=await configured().functions.invoke('beta-request-code',{body:{email:email.trim().toLowerCase()}});if(error)throw Object.assign(Error('Code delivery could not be confirmed. Wait 60 seconds and retry.'),{code:'DELIVERY_UNAVAILABLE'});},
   async verifyCode(email,token){const {data,error}=await configured().auth.verifyOtp({email,token,type:'email'});if(error)throw error;if(data.session){verifiedUser=data.session.user.id;verifiedAt=Date.now();}return data.session?identity(data.session.user):null;},
   async passwordSignIn(email,password){const {data,error}=await configured().auth.signInWithPassword({email,password});if(error)throw Error('Sign-in failed.');if(data.session){verifiedUser=data.session.user.id;verifiedAt=Date.now();}return data.session?identity(data.session.user):null;},
@@ -52,7 +53,13 @@ export const authPort: AuthPort = {
    const {error}=await configured().rpc('accept_beta_invite');
    // Invitation acceptance is for existing beta identities; verified membership also admits enrolled nonbeta accounts.
    try{await membershipGateway.status(userId);return true;}
-   catch(statusError){if((statusError as {code?:string}).code==='42501')return false;throw statusError;}
+   catch(statusError){
+    if((statusError as {code?:string}).code!=='42501')throw statusError;
+    if(!await readEnrollmentAvailability())return false;
+    const intent=await prepareAccountEnrollment(pendingEnrollmentReferral());
+    if(intent.userId!==userId)throw Error('Account changed. Sign in again.');
+    await enrollConfirmedAccount(intent);clearEnrollmentReferral();return true;
+   }
   },
   async signOut(){const {error}=await configured().auth.signOut({scope:'local'});if(error)throw error;recoveryUser=null;verifiedUser=null;verifiedAt=0;recoveryExchange=Promise.resolve();},
   subscribe(listener){const {data}=configured().auth.onAuthStateChange((event,session)=>{if(event==='PASSWORD_RECOVERY'&&session){recoveryUser=session.user.id;verifiedUser=session.user.id;verifiedAt=Date.now();}setTimeout(()=>listener(session?identity(session.user):null),0);});return()=>data.subscription.unsubscribe();},
@@ -184,13 +191,9 @@ export async function setBetaAnalyticsConsent(enabled:boolean){
   }
 }
 export async function trackBetaAnalytics(eventName:BetaAnalyticsEvent,screen?:string,durationSeconds?:number){
-  const allowedScreens=new Set(['welcome','profile','settings','betaFeedback','betaPrivacy','shop','plans','planInventory','planDetail','planTracker','planHistory','school','schoolDetail','schoolMore','schoolSources','guide','detail','plan','calc','tracker','review','schedule','inventory','reminders','history','dataImport','more']);
-  if(screen&&!allowedScreens.has(screen))return false;
-  const duration=eventName==='screen_time'&&Number.isSafeInteger(durationSeconds)?Math.min(21600,Math.max(1,durationSeconds!)):null;
-  if(eventName==='screen_time'&&duration===null)return false;
-  const userId=await eligibleUser(),api=configured() as any;
-  const {error}=await api.from('beta_analytics_events').insert({user_id:userId,event_name:eventName,screen:screen??null,duration_seconds:duration});
-  return !error;
+ try{const {recordActivity}=await import('./member-activity');
+ await recordActivity(eventName,{...(screen?{screen}:{}),...(durationSeconds===undefined?{}:{seconds:durationSeconds})});return true;
+ }catch{return false;}
 }
 
 export async function callReminderBackend(expectedUserId:string,body:Record<string,unknown>){
@@ -233,6 +236,7 @@ export async function callMembership(expectedUserId:string,operation:'status'|'c
 export type LiveBillingStatus={mode:'live';tier:'free'|'pro';basis:string;checkoutEnabled:boolean;billingPortalEnabled:boolean;returnUrl:string;productionAccessFromReturn:false};
 export async function callLiveMembership(expectedUserId:string,operation:'status'|'checkout'|'portal'){
  if(await plannerAccountId()!==expectedUserId)throw Error('Account changed. Open your membership again.');
+ if(operation==='checkout')void import('./member-activity').then(({recordActivity})=>recordActivity('upgrade_clicked',{screen:'membership'})).catch(()=>{});
  const api=configured(),{data,error}=await api.auth.getSession();
  if(error||data.session?.user.id!==expectedUserId||cloudConfig.status!=='ready')throw Error('Sign in to the original account.');
  const response=await fetch('https://csolruvoeukctlybiemd.supabase.co/functions/v1/ezpep-membership-live/'+operation,{
@@ -252,6 +256,7 @@ export async function callLiveMembership(expectedUserId:string,operation:'status
  if(url.protocol!=='https:'||url.hostname!==host||url.username||url.password||url.port)throw Error('Billing destination could not be verified.');
  if(operation==='checkout'&&(typeof result.attemptId!=='string'||typeof result.reused!=='boolean'))throw Error('Checkout response could not be verified.');
  if(operation==='portal'&&result.expires!=='provider_managed')throw Error('Billing portal response could not be verified.');
+ if(operation==='checkout')void import('./member-activity').then(({recordActivity})=>recordActivity('checkout_opened',{screen:'membership'})).catch(()=>{});
  return {url:url.href};
 }
 
@@ -306,7 +311,7 @@ export async function requestAccountSignup(email:string,password:string,confirma
   data:{display_name:displayName.trim()}
  }});
  if(error)throw Error('Account creation could not be confirmed. Try again later or sign in if you already have an account.');
- return 'Check your email to verify your address, then return here and confirm your account. If you already have an account, sign in. No payment has been taken.';
+ return 'Open the confirmation link in your email to continue. If it opens in another browser, sign in normally with your email and password. No code entry or payment is required.';
 }
 
 /** Prepared enrollment transport; server gate stays authoritative and closed until installed. */
@@ -366,4 +371,24 @@ export async function saveProUpgradeProfile(expectedUserId:string,firstName:stri
  const {data,error}=await configured().auth.updateUser({data:{first_name:first,last_name:last,display_name:first+' '+last}});
  if(error||data.user?.id!==expectedUserId)throw Error('Your name could not be saved. Please try again.');
  return readProUpgradeProfile(expectedUserId);
+}
+
+export type AccountOnboarding={userId:string;revision:number;experience:'new'|'familiar'|'experienced'|null;goal:'learn'|'research'|'setup'|'track'|null;completed:boolean;backupConsent:boolean;analyticsConsent:boolean};
+type OwnOperation='account_onboarding_read_v1'|'account_onboarding_save_v1'|'planner_primary_status_v1'|'planner_primary_claim_v1'|'planner_primary_write_v1'|'account_activity_submit_v1'|'owner_member_activity_v1';
+export async function callOwnAccount(userId:string,name:OwnOperation,args:Record<string,unknown>={}):Promise<any>{
+ if(await plannerAccountId()!==userId)throw Error('Account changed. Your data is preserved.');
+ const {data,error}=await (configured() as any).rpc(name,args);
+ if(await plannerAccountId()!==userId)throw Error('Account changed. The previous response was discarded.');
+ if(error)throw Object.assign(Error('Account service could not complete this action. Your saved data is preserved.'),{code:error.code,reason:/^[A-Z_]+$/.test(error.message)?error.message:'UNAVAILABLE'});
+ if(name!=='owner_member_activity_v1'&&data?.userId!==userId)throw Error('Account response could not be verified.');
+ return data;
+}
+export async function readAccountOnboarding(userId:string):Promise<AccountOnboarding>{
+ const r=await callOwnAccount(userId,'account_onboarding_read_v1');
+ if(!Number.isSafeInteger(r.revision)||r.revision<0||typeof r.completed!=='boolean'||typeof r.backupConsent!=='boolean'||typeof r.analyticsConsent!=='boolean')throw Error('Onboarding could not be verified.');
+ return r;
+}
+export async function saveAccountOnboarding(userId:string,value:AccountOnboarding):Promise<AccountOnboarding>{
+ if(value.userId!==userId)throw Error('Account changed.');
+ return callOwnAccount(userId,'account_onboarding_save_v1',{expected_revision:value.revision,experience:value.experience,goal:value.goal,completed:value.completed,backup_consent:value.backupConsent,analytics_consent:value.analyticsConsent});
 }

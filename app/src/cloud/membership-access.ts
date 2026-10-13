@@ -101,6 +101,6 @@ export function membershipStartMode(store:Store,access:MembershipAccess|null,com
 export function membershipSetupGate(store:Store,access:MembershipAccess|null,compoundId?:string,now=Date.now()):'allowed'|'upgradeRequired'|'unavailable'{
  if(!accessIsCurrent(access,now))return 'unavailable';
  if(access!.tier==='pro')return 'allowed';
- const existing=access!.selectedCompoundId||getActivePlans(store)[0]?.compoundId;
+ const existing=access!.selectedCompoundId||getActivePlans(store)[0]?.compoundId||store.archives[0]?.compoundId;
  return existing&&(!compoundId||existing!==compoundId)?'upgradeRequired':'allowed';
 }
