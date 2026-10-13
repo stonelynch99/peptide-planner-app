@@ -4,7 +4,7 @@ const {blankStore,newDraft,activate}=require('./app/src/engine.ts');
 const {library}=require('./app/src/library-v04.ts');
 const {encodeCompactPlannerStore,encodePlannerStore,decodePlannerStore}=require('./app/src/persistence-v04.ts');
 const {getActivePlans,addPlan}=require('./app/src/multiplan-v04.ts');
-const {MembershipGateway,membershipChangeError,effectiveTrackingStore,membershipStartMode}=require('./app/src/cloud/membership-access.ts');
+const {MembershipGateway,membershipChangeError,effectiveTrackingStore,membershipStartMode,membershipSetupGate}=require('./app/src/cloud/membership-access.ts');
 const {MembershipPlannerClient,membershipPlannerRow}=require('./app/src/cloud/membership-planner.ts');
 const {MembershipSession}=require('./app/src/cloud/membership-session.ts');
 const {requireSyncBinding}=require('./app/src/cloud/sync-binding.ts');
@@ -142,4 +142,28 @@ test('actual cloud check: absent cloud copy opens first backup review without up
  const context={userId:'one',current:{current:local},readCloudPlannerSnapshot:async()=>null,encodePlannerStore,reviewMigration:(id,payload)=>({id,payload}),setReview:value=>changes.review=value,setSyncReview:value=>changes.sync=value,setConfirmed:value=>changes.confirmed=value,setPendingDirection:()=>{},setShowAdvanced:()=>{},setCloudAvailable:value=>changes.cloud=value};
  vm.runInNewContext(ts.transpileModule(source.slice(start,end)+';globalThis.run=refreshSync;',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
  const message=await context.run();assert.equal(changes.cloud,false);assert.equal(changes.sync,null);assert.equal(changes.confirmed,false);assert.equal(changes.review.payload,encodePlannerStore(local));assert.match(message,/No cloud backup exists yet/);assert.equal(context.current.current,local);
+});
+
+test('early Pro gate: paused first peptide counts before Free selection; drafts cannot bypass it',()=>{
+ const empty={...blankStore(),activePlans:[]},first={...activate(draft()),pausedAt:'2026-10-12'},saved={...empty,activePlans:[first],active:first},before=encodePlannerStore(saved),free=evidence('free',null);
+ assert.equal(membershipSetupGate(empty,free),'allowed');
+ assert.equal(membershipSetupGate(saved,free),'upgradeRequired');
+ assert.equal(membershipSetupGate(saved,free,'b'),'upgradeRequired');
+ assert.equal(membershipSetupGate(saved,free,'a'),'allowed');
+ assert.equal(membershipSetupGate(empty,evidence('free','a'),'b'),'upgradeRequired');
+ assert.equal(membershipSetupGate(saved,evidence('pro',null),'b'),'allowed');
+ assert.equal(membershipSetupGate(saved,null,'b'),'unavailable');
+ assert.match(membershipChangeError(saved,{...saved,draft:{...draft(),compoundId:'b'}},free),/Upgrade to Pro/);
+ assert.equal(encodePlannerStore(saved),before);
+});
+test('actual setup entry: Guide and Learn attempts open Pro before writing or replacing a second-peptide draft',()=>{
+ const source=fs.readFileSync('app/App.tsx','utf8'),start=source.indexOf('  const chooseDraft='),end=source.indexOf('  const startPlan=',start),first=activate(draft()),originalDraft=draft(),saved={store:{...blankStore(),activePlans:[first],active:first,draft:originalDraft},update:()=>{throw Error('Unexpected draft write');}},calls=[];
+ const context={saved,membershipCurrent:{current:evidence('free',null)},membershipSetupGate,setUpgradePrompt:value=>calls.push(value),setReplacement:()=>{throw Error('Unexpected draft replacement');},Alert:{alert:()=>{throw Error('Unexpected alert');}}};
+ vm.runInNewContext(ts.transpileModule(source.slice(start,end)+';globalThis.run=chooseDraft;',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
+ context.run({...draft(),compoundId:'b'},'plan');context.run({...draft(),compoundId:'b'},'review');assert.deepEqual(calls,[true,true]);assert.equal(saved.store.draft,originalDraft);
+});
+test('actual Add another entry: Free receives Pro immediately, while Pro reaches the builder',()=>{
+ const source=fs.readFileSync('app/App.tsx','utf8'),start=source.indexOf('  const beginNewPlan='),end=source.indexOf('  const chooseDraft=',start),first={...activate(draft()),pausedAt:'2026-10-12'},calls=[],context={saved:{store:{...blankStore(),activePlans:[first],active:first}},membershipCurrent:{current:evidence('free',null)},membershipSetupGate,setUpgradePrompt:v=>calls.push('pro:'+v),setScreen:v=>calls.push(v)};
+ vm.runInNewContext(ts.transpileModule(source.slice(start,end)+';globalThis.run=beginNewPlan;',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
+ context.run();assert.deepEqual(calls,['pro:true']);context.membershipCurrent.current=evidence('pro',null);context.run();assert.deepEqual(calls,['pro:true','guide']);
 });

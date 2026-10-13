@@ -52,6 +52,10 @@ function introducesTracking(before:SavedPlan|undefined,after:SavedPlan):boolean{
 }
 /** Validate changes against the full preserved snapshot, not a filtered UI copy. */
 export function membershipChangeError(before:Store,after:Store,access:MembershipAccess|null,now=Date.now()):string|null{
+ if(after.draft&&(!before.draft||before.draft.compoundId!==after.draft.compoundId)){
+  const gate=membershipSetupGate(before,access,after.draft.compoundId,now);
+  if(gate!=='allowed')return gate==='upgradeRequired'?'Upgrade to Pro to set up another peptide. Your existing plan and history stay saved.':'Refresh your membership before setting up a peptide. Your saved data is unchanged.';
+ }
  const previous=new Map(getActivePlans(before).map(p=>[p.id,p]));
  for(const plan of getActivePlans(after)){
   if(introducesTracking(previous.get(plan.id),plan)&&!canTrackCompound(access,plan.compoundId,now))
@@ -91,4 +95,12 @@ export function membershipStartMode(store:Store,access:MembershipAccess|null,com
  if(canTrackCompound(access,compoundId,now))return 'start';
  if(access!.selectedCompoundId)return 'upgradeRequired';
  return getActivePlans(store).length?'selectionRequired':'saveForSelection';
+}
+
+/** Gate new setup before collecting a second peptide's plan details. */
+export function membershipSetupGate(store:Store,access:MembershipAccess|null,compoundId?:string,now=Date.now()):'allowed'|'upgradeRequired'|'unavailable'{
+ if(!accessIsCurrent(access,now))return 'unavailable';
+ if(access!.tier==='pro')return 'allowed';
+ const existing=access!.selectedCompoundId||getActivePlans(store)[0]?.compoundId;
+ return existing&&(!compoundId||existing!==compoundId)?'upgradeRequired':'allowed';
 }
