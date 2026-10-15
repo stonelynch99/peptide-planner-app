@@ -1,0 +1,14 @@
+# Preparation only. Do not deploy publicly. Review against the actual production export.
+# Require authorized private access at the hosting layer before serving the beta.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Cache-Control: no-store
+  X-Robots-Tag: noindex, nofollow, noarchive
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://APPROVED-PROJECT.supabase.co wss://APPROVED-PROJECT.supabase.co; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests
+# Replace APPROVED-PROJECT privately with the authorized project ref.
+# If Expo exports inline scripts, use hashes derived from that exact build; do not add unsafe-eval.
+# Do not enable public source maps or include real .env files, privileged keys or diagnostics.
+# noindex is not access control. DNS/sender setup is not authorization to publish the app.
