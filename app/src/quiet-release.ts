@@ -6,8 +6,8 @@ import {plannerSyncPayload} from './cloud/planner-sync';
 import {pendingFeedbackDrafts} from './cloud/feedback-attachments';
 import {checkDue,newerRelease,validRelease,type Release} from './quiet-release-core';
 const key='ezpep.release-check.v1';
-export function useQuietRelease(safe:boolean,userId:string|null,store:Parameters<typeof encodePlannerStore>[0],blockers:readonly string[]=[]){
- const state=useRef({safe,userId,store,blockers});state.current={safe,userId,store,blockers};
+export function useQuietRelease(safe:boolean,userId:string|null,store:Parameters<typeof encodePlannerStore>[0],blockers:readonly string[]=[],prepareBackup?:()=>Promise<{userId:string;revision:number;payload:string}>){
+ const state=useRef({safe,userId,store,blockers,prepareBackup});state.current={safe,userId,store,blockers,prepareBackup};
  const [message,setMessage]=useState(''),[checking,setChecking]=useState(false);
  const trigger=useRef<null|((manual?:boolean)=>Promise<void>)>(null);
  useEffect(()=>{
@@ -40,18 +40,17 @@ export function useQuietRelease(safe:boolean,userId:string|null,store:Parameters
     if(disposed)return;
     if(!permitted(manual)){report(manual,'An update is available. It is waiting because: '+reason()+'. Your saved data is unchanged.');return;}
     if(state.current.userId!==initial.userId){report(manual,'An update is available. Your account changed; check again from the current account.');return;}
-    const baselineRaw=await plannerStorage.getItem('pepplan.cloud-sync.baseline.v1:'+initial.userId);
-    const baseline=baselineRaw?JSON.parse(baselineRaw):null;
-    if(!baseline||!Number.isSafeInteger(baseline.revision)||baseline.revision<1||baseline.payload!==plannerSyncPayload(initial.store)){
-     report(manual,'An update is available. Your device has changes outside its verified cloud copy, or cloud sync is not set up. Open More → Your account to review cloud saving. Your device data is unchanged.');return;
-    }
+    report(manual,'Saving this device to your cloud backup…');
+    if(!initial.prepareBackup)throw Error('Cloud backup is unavailable. Please retry.');
+    const receipt=await initial.prepareBackup();
+    if(receipt.userId!==initial.userId||!Number.isSafeInteger(receipt.revision)||receipt.revision<1||receipt.payload!==plannerSyncPayload(initial.store))throw Error('Backup verification did not match this planner. Please retry.');
     if((await pendingFeedbackDrafts(initial.userId!)).length){report(manual,'An update is available. Send or resolve your pending feedback before updating.');return;}
     // Recheck after all asynchronous work. A version lookup never bypasses reload safety.
     if(disposed||interactionRevision!==startedInteraction||!permitted(manual)||state.current.userId!==initial.userId||encodePlannerStore(state.current.store)!==payload){
      report(manual,'An update is available. '+(!permitted(manual)?'It is waiting because: '+reason(): 'Your activity or saved data changed during the check; check again when finished')+'. Your saved data is unchanged.');return;
     }
     report(manual,'Updating EZPep Planner…');win.location.reload();
-   }catch{report(manual,'Could not check for updates. Check your connection and try again.');}
+   }catch(error){report(manual,'Update paused. '+(error instanceof Error?error.message:'Check your connection and retry.')+' Your saved planner is unchanged.');}
    finally{busy=false;if(manual&&!disposed)setChecking(false);}
   }
   const touch=()=>{interacted=true;interactionRevision++;};

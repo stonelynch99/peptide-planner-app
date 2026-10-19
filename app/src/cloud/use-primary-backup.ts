@@ -5,6 +5,8 @@ import type {Store} from '../engine';
 import {backupPrimary} from './primary-backup';
 import {primaryBackupPort,secureId} from './primary-backup-client';
 import {dailySyncSchedule,plannerSyncPayload} from './planner-sync';
+import {encodePlannerStore} from '../persistence-v04';
+import {saveLocalSafetyCopy} from './local-backup';
 import {recordActivity} from './member-activity';
 type State={kind:'local'|'checking'|'syncing'|'upToDate'|'retry'|'needsAttention'|'setup';label:string;detail:string};
 const local:State={kind:'local',label:'Saved on this device',detail:'Your planner stays on this device.'};
@@ -49,5 +51,23 @@ export function usePrimaryBackup({userId,store,ready,saving,consent,onVerified}:
  },[userId,ready,saving,consent,syncNow]);
  // First saved setup must not wait until evening. Later edits retain the approved daily schedule.
  useEffect(()=>{if(!userId||!ready||saving||!consent)return;void syncNow();},[userId,ready,saving,consent,store,syncNow]);
- return {state,syncNow,activate:()=>void syncNow(true)};
+ const prepareUpdate=useCallback(async()=>{
+  const initial=current.current,id=initial.userId;
+  if(!id||!initial.ready||initial.saving)throw Error('Wait for this device to finish saving, then retry.');
+  if(!initial.consent)throw Error('Enable cloud backup below, then retry the update.');
+  if(!(initial.store.activePlans?.length||initial.store.active||initial.store.archives.length))throw Error('No saved planner is available to back up. Review backup options below before updating.');
+  const original=encodePlannerStore(initial.store);
+  const bound=()=>{const now=current.current;if(now.userId!==id||!now.ready||now.saving||!now.consent||encodePlannerStore(now.store)!==original)throw Error('Your account or planner changed during backup. Retry when finished.');return now.store;};
+  await saveLocalSafetyCopy(original,'before-app-update');bound();
+  try{
+   const port=await primaryBackupPort(id,bound);bound();
+   const result=await backupPrimary(id,bound,port,secureId);bound();
+   if(result.kind!=='current')throw Error(result.kind==='consent'?'Enable cloud backup below, then retry.':result.kind==='pending'?'New edits are waiting to back up. Retry when finished.':'Review this device’s backup ownership below, then retry.');
+   return {userId:id,revision:result.revision,payload:result.payload};
+  }catch(error){
+   if(error instanceof Error&&['EXPLICIT_DEVICE_RECOVERY_REQUIRED','DEVICE_BELONGS_TO_ANOTHER_ACCOUNT','DEVICE_ACCOUNT_CHANGED','REVISION_CHANGED'].includes(error.message))throw Error('Review this device’s backup ownership below, then retry. Your safety copy is preserved.');
+   throw error;
+  }
+ },[]);
+ return {state,syncNow,prepareUpdate,activate:()=>void syncNow(true)};
 }
