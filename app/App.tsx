@@ -229,7 +229,7 @@ export default function App() {
     setupIdentity.current=v.userId;setExperience(v.experience);setFirstGoal(v.goal);
     setBackupConsentChecked(v.backupConsent);setAnalyticsChecked(v.analyticsConsent);
     setOnboarding(v.completed&&v.experience&&v.goal?{experience:v.experience,goal:v.goal}:null);
-    if(!v.completed){setMembershipOpen(false);setScreen('welcome');}
+    if(!v.completed&&getActivePlans(saved.store).length===0&&saved.store.archives.length===0){setMembershipOpen(false);setScreen('welcome');}
   },[accountSetup.value]);
   useEffect(()=>{
     const v=accountSetup.value;if(!v||v.completed||accountSetup.saving||(!experience&&!firstGoal))return;
@@ -407,9 +407,9 @@ export default function App() {
   },[saved.ready,saved.store.activePlans,saved.store.active,saved.store.archives,saved.loadFailed,saved.saving,saved.error,betaAccount.state.status,betaAccount.state.userId,membership.access]);
   useEffect(()=>listenForReminder((planId)=>{if(planId)setSelectedPlanId(planId);setScreen("tracker");}),[]);
   useEffect(()=>{
-    if(!saved.ready||screen!=="welcome"||onboarding===undefined||restartingOnboarding)return;
-    if(onboarding){setScreen("tracker");return;}
-    // Only this account's saved onboarding completion can skip these questions.
+    if(!saved.ready||saved.loadFailed||screen!=="welcome"||restartingOnboarding)return;
+    if(onboarding||getActivePlans(saved.store).length>0||saved.store.archives.length>0){setScreen("tracker");return;}
+    // Returning planners can open Today without inventing onboarding completion or consent.
   },[saved.ready,onboarding,plans.length,restartingOnboarding,saved.store.draft]);
 
   const renderWelcome=()=>(
