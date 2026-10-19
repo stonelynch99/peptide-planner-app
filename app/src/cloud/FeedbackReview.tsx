@@ -1,0 +1,13 @@
+import React,{useEffect,useState} from 'react';
+import {Image,Modal,Pressable,Text,View} from 'react-native';
+import {readBetaFeedback,readBetaScreenshot,type ReviewedFeedback} from './client';
+export function FeedbackReview(){
+  const [rows,setRows]=useState<ReviewedFeedback[]>([]),[error,setError]=useState('');
+  useEffect(()=>{let active=true;void readBetaFeedback().then(v=>{if(active)setRows(v);}).catch(()=>{if(active)setError('Private feedback could not be loaded.');});return()=>{active=false;};},[]);
+  return <View style={{gap:12,marginTop:20}}><Text style={{fontWeight:'700',fontSize:20}}>Private beta feedback</Text><Text>Only reports and screenshots deliberately submitted by testers are shown.</Text>{!!error&&<Text>{error}</Text>}{rows.map(row=><View key={row.id} style={{padding:12,borderWidth:1,borderColor:'#DDE8F6',borderRadius:12}}><Text style={{fontWeight:'700'}}>{row.submitter_name?.trim()||row.submitter_email||'Tester identity unavailable'}</Text>{!!row.submitter_name?.trim()&&!!row.submitter_email&&<Text>{row.submitter_email}</Text>}<Text>{row.category} · {new Date(row.created_at).toLocaleString()}</Text><Text>{row.message}</Text>{row.attachment_paths.map(path=><PrivateScreenshot key={path} path={path}/>)}</View>)}</View>;
+}
+function PrivateScreenshot({path}:{path:string}){
+  const [url,setUrl]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[expanded,setExpanded]=useState(false);
+  useEffect(()=>()=>{if(url)URL.revokeObjectURL(url);},[url]);
+  return <View>{url?<Pressable accessibilityRole="button" accessibilityLabel="Enlarge submitted screenshot" onPress={()=>setExpanded(true)}><Image accessibilityLabel="Submitted screenshot" source={{uri:url}} style={{height:260,width:'100%',resizeMode:'contain'}}/><Text>Tap to enlarge screenshot</Text></Pressable>:<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setBusy(true);void readBetaScreenshot(path).then(setUrl).catch(()=>setError('Screenshot unavailable or access denied.')).finally(()=>setBusy(false));}}><Text>{busy?'Loading…':'View private screenshot'}</Text></Pressable>}{!!error&&<Text>{error}</Text>}<Modal visible={expanded} transparent={false} animationType="fade" onRequestClose={()=>setExpanded(false)}><View style={{flex:1,backgroundColor:'#fff',padding:20,paddingTop:48}}><Pressable accessibilityRole="button" accessibilityLabel="Close enlarged screenshot" onPress={()=>setExpanded(false)} style={{padding:16}}><Text>Close screenshot</Text></Pressable><Image accessibilityLabel="Enlarged submitted screenshot" source={{uri:url}} style={{flex:1,width:'100%',resizeMode:'contain'}}/></View></Modal></View>;
+}

@@ -1,0 +1,10 @@
+import {scheduleSummary} from './engine';
+import type {Schedule} from './engine';
+import React from 'react';
+import {Text} from 'react-native';
+import type {ResearchPracticeReference} from './research-practice';
+import {RESEARCH_PRACTICE_LABEL,RESEARCH_PRACTICE_NOTICE} from './research-practice';
+import {Button,Card,Evidence,u} from './ui';
+export default function ResearchPracticeCard({reference:r,onModel}:{reference:ResearchPracticeReference;onModel:()=>void}){
+ return <Card><Text style={u.label}>{RESEARCH_PRACTICE_LABEL}</Text><Evidence kind={r.evidenceClass}/><Text style={u.heading}>{r.title}</Text><Text style={u.small}>{RESEARCH_PRACTICE_NOTICE}</Text>{r.stages.map((s,i)=><Text key={i} style={u.body}>Stage {i+1}: {s.amount??'Not supplied'} {s.unit} · {s.durationWeeks??'Unspecified'} weeks</Text>)}{!r.stages.length&&<Text style={u.body}>{r.amount??'Amount not supplied'} {r.unit} · {r.durationWeeks??'Unspecified'} weeks</Text>}<Text style={u.body}>Frequency: {r.frequency==null?'Not supplied':typeof r.frequency==='string'?r.frequency:'kind' in r.frequency?scheduleSummary(r.frequency as Schedule):String(r.frequency.type??'Not supplied')}{r.frequency&&typeof r.frequency!=='string'&&Array.isArray(r.frequency.times)?' · '+r.frequency.times.join(' / '):''}</Text><Text style={u.body}>Planned break: {r.plannedBreakWeeks??'Not supplied'} weeks · Default time: {r.defaultTime??'Not supplied'}</Text><Text style={u.body}>Vial: {r.vialStrengthMg??'Not supplied'} mg · Diluent: {r.diluentMl??'Not supplied'} mL</Text><Text style={u.small}>{r.provenance.sourceTitle}{r.provenance.sourceIds.length?' · '+r.provenance.sourceIds.join(', '):''}</Text><Text style={u.small}>{r.provenance.notes}</Text>{r.provenance.sourceUrls.map(url=><Text key={url} selectable style={u.small}>{url}</Text>)}{r.transferable?<Button label="Use reviewed reference in Guide →" onPress={onModel}/>:<Text style={u.small}>No reviewed transfer is available. Read the cited source and enter values deliberately if appropriate.</Text>}</Card>;
+}
