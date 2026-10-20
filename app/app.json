@@ -13,9 +13,14 @@
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.ezpep.planner",
+      "versionCode": 2,
       "permissions": [
         "android.permission.SCHEDULE_EXACT_ALARM"
-      ]
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./public/icon-512.png",
+        "backgroundColor": "#F7FBFF"
+      }
     },
     "plugins": [
       "expo-notifications",
@@ -29,6 +34,7 @@
     "experiments": {
       "baseUrl": ""
     },
-    "scheme": "ezpepplanner"
+    "scheme": "ezpepplanner",
+    "icon": "./public/icon-512.png"
   }
 }
