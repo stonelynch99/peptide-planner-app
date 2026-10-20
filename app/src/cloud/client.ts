@@ -2,21 +2,56 @@ import {ATTACHMENT_BUCKET,submitRecoverableFeedback,feedbackDeadline,type Screen
 import {MembershipGateway} from './membership-access';
 import {MembershipPlannerClient} from './membership-planner';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {createClient} from '@supabase/supabase-js';
+import {Platform,Linking,AppState} from 'react-native';
+import {NATIVE_AUTH_REDIRECT,nativeAuthCode} from './auth-callback';
+import {createClient,processLock} from '@supabase/supabase-js';
 import {validateCloudConfig} from './config';
 import {referralSummary,AUTH_STORAGE_KEY,CONSENT_VERSION,feedbackRow,type AuthPort,type FeedbackInput} from './contracts';
 import type {Database} from './database';
 export const cloudConfig = validateCloudConfig(process.env.EXPO_PUBLIC_SUPABASE_URL, process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
-const client = cloudConfig.status === 'ready' ? createClient<Database>(cloudConfig.url,cloudConfig.key,{auth:{storage:AsyncStorage,storageKey:AUTH_STORAGE_KEY,persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,flowType:'pkce'}}) : null;
+const client = cloudConfig.status === 'ready' ? createClient<Database>(cloudConfig.url,cloudConfig.key,{auth:{storage:AsyncStorage,storageKey:AUTH_STORAGE_KEY,lock:Platform.OS==='web'?undefined:processLock,persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,flowType:'pkce'}}) : null;
 function configured() { if (!client) throw new Error('Cloud accounts are unavailable.'); return client; }
+function requireNativePkce(){
+ if(Platform.OS!=='web'&&(typeof globalThis.crypto?.getRandomValues!=='function'||typeof globalThis.crypto?.subtle?.digest!=='function'))
+  throw Error('This test build needs native security setup before sending account links. Email/password sign-in remains available.');
+}
 // Recovery is exchanged by Supabase using this browser's PKCE verifier. URL flags never grant access.
 let recoveryUser:string|null=null, verifiedAt=0, verifiedUser:string|null=null;
 const identity=(user:any)=>({userId:user.id,email:user.email||'',displayName:typeof user.user_metadata?.display_name==='string'?user.user_metadata.display_name:'',recovery:recoveryUser===user.id});
 let recoveryExchange:Promise<void>|null=null;
+let nativeAuthTail:Promise<void>=Promise.resolve(),linkMessage='';
+const nativeExchanges=new Map<string,Promise<void>>();
+export function accountLinkMessage(){return linkMessage;}
+function nativeExchange(raw:string):Promise<void>{
+ let code:string|null;
+ try{code=nativeAuthCode(raw);}catch(error){linkMessage='This account link is invalid or expired. Sign in normally or request a fresh link in this app.';return Promise.reject(error);}
+ if(!code)return Promise.resolve();
+ const existing=nativeExchanges.get(code);if(existing)return existing;
+ const exchange=nativeAuthTail.catch(()=>{}).then(async()=>{
+  const {data,error}=await configured().auth.exchangeCodeForSession(code!);
+  if(error||!data.session)throw Error('This account link is invalid or expired.');
+  const checked=await configured().auth.getUser();
+  if(checked.error||checked.data.user?.id!==data.session.user.id)throw Error('The account link could not be verified.');
+  linkMessage='';
+ }).catch(error=>{linkMessage='The account link could not be verified. Sign in normally or request a fresh link in this app.';throw error;});
+ nativeAuthTail=exchange.catch(()=>{});nativeExchanges.set(code,exchange);
+ if(nativeExchanges.size>8)nativeExchanges.delete(nativeExchanges.keys().next().value!);
+ return exchange;
+}
+// Recovery authority comes only from the SDK's verified PKCE recovery event.
+if(client)client.auth.onAuthStateChange((event,session)=>{
+ if(event==='PASSWORD_RECOVERY'&&session){recoveryUser=session.user.id;verifiedUser=session.user.id;verifiedAt=Date.now();}
+ if(event==='SIGNED_OUT'){recoveryUser=null;verifiedUser=null;verifiedAt=0;}
+});
 async function restoreRecovery(){
+  if(Platform.OS!=='web'){
+    const initial=await Linking.getInitialURL().catch(()=>null);
+    if(initial)await nativeExchange(initial);
+    return;
+  }
   if(recoveryExchange)return recoveryExchange;
   recoveryExchange=(async()=>{
-    if(typeof window==='undefined')return;
+    if(typeof window==='undefined'||!window.location?.href)return;
     const url=new URL(window.location.href),code=url.searchParams.get('code');
     const rejected=url.searchParams.has('error')||new URLSearchParams(url.hash.slice(1)).has('error');
     if(!code&&!rejected)return;
@@ -40,11 +75,11 @@ async function requireAccount(){
  return data.user;
 }
 export const authPort: AuthPort = {
-  async restore(){try{await restoreRecovery();}catch{ /* Invalid/cross-browser PKCE links fall back to normal password sign-in; never grant access. */ return null;}const {data,error}=await configured().auth.getSession();if(error)throw error;return data.session?identity(data.session.user):null;},
+  async restore(){try{await restoreRecovery();}catch{ /* A bad link never replaces a valid persisted session. Membership is checked separately. */}const {data,error}=await configured().auth.getSession();if(error)throw error;return data.session?identity(data.session.user):null;},
   async requestCode(email){const {error}=await configured().functions.invoke('beta-request-code',{body:{email:email.trim().toLowerCase()}});if(error)throw Object.assign(Error('Code delivery could not be confirmed. Wait 60 seconds and retry.'),{code:'DELIVERY_UNAVAILABLE'});},
   async verifyCode(email,token){const {data,error}=await configured().auth.verifyOtp({email,token,type:'email'});if(error)throw error;if(data.session){verifiedUser=data.session.user.id;verifiedAt=Date.now();}return data.session?identity(data.session.user):null;},
-  async passwordSignIn(email,password){const {data,error}=await configured().auth.signInWithPassword({email,password});if(error)throw Error('Sign-in failed.');if(data.session){verifiedUser=data.session.user.id;verifiedAt=Date.now();}return data.session?identity(data.session.user):null;},
-  async requestRecovery(email){const {error}=await configured().auth.resetPasswordForEmail(email,{redirectTo:'https://app.ezpepplanner.com/'});if(error)throw Error('Recovery unavailable.');},
+  async passwordSignIn(email,password){if(Platform.OS!=='web')await nativeAuthTail;const {data,error}=await configured().auth.signInWithPassword({email,password});if(error)throw Error('Sign-in failed.');recoveryUser=null;linkMessage='';if(data.session){verifiedUser=data.session.user.id;verifiedAt=Date.now();}return data.session?identity(data.session.user):null;},
+  async requestRecovery(email){requireNativePkce();const {error}=await configured().auth.resetPasswordForEmail(email,{redirectTo:Platform.OS==='web'?'https://app.ezpepplanner.com/':NATIVE_AUTH_REDIRECT});if(error)throw Error('Recovery unavailable.');},
   async updatePassword(password){const user=await requireAccount();if(verifiedUser!==user.id||Date.now()-verifiedAt>600000)throw Error('Fresh verification required.');const {error}=await configured().auth.updateUser({password});if(error)throw Error('Password update failed.');recoveryUser=null;verifiedAt=0;verifiedUser=null;},
   async updateDisplayName(name){await requireAccount();const {error}=await configured().auth.updateUser({data:{display_name:name}});if(error)throw Error('Profile update failed.');},
   async eligible(expectedUserId){
@@ -61,8 +96,19 @@ export const authPort: AuthPort = {
     await enrollConfirmedAccount(intent);clearEnrollmentReferral();return true;
    }
   },
-  async signOut(){const {error}=await configured().auth.signOut({scope:'local'});if(error)throw error;recoveryUser=null;verifiedUser=null;verifiedAt=0;recoveryExchange=Promise.resolve();},
-  subscribe(listener){const {data}=configured().auth.onAuthStateChange((event,session)=>{if(event==='PASSWORD_RECOVERY'&&session){recoveryUser=session.user.id;verifiedUser=session.user.id;verifiedAt=Date.now();}setTimeout(()=>listener(session?identity(session.user):null),0);});return()=>data.subscription.unsubscribe();},
+  async signOut(){if(Platform.OS!=='web')await nativeAuthTail;const {error}=await configured().auth.signOut({scope:'local'});if(error)throw error;recoveryUser=null;verifiedUser=null;verifiedAt=0;recoveryExchange=Promise.resolve();linkMessage='';},
+  subscribe(listener){
+   let alive=true;
+   const {data}=configured().auth.onAuthStateChange((_event,session)=>{setTimeout(()=>{if(alive)listener(session?identity(session.user):null);},0);});
+   if(Platform.OS==='web')return()=>{alive=false;data.subscription.unsubscribe();};
+   const refresh=(state:string)=>{if(state==='active')void configured().auth.startAutoRefresh().catch(()=>{});else void configured().auth.stopAutoRefresh().catch(()=>{});};
+   refresh(AppState.currentState);
+   const appState=AppState.addEventListener('change',refresh);
+   const links=Linking.addEventListener('url',({url})=>{
+    void nativeExchange(url).catch(()=>{}).then(async()=>{const {data:current,error}=await configured().auth.getSession();if(alive&&!error)listener(current.session?identity(current.session.user):null);}).catch(()=>{});
+   });
+   return()=>{alive=false;links.remove();appState.remove();void configured().auth.stopAutoRefresh().catch(()=>{});data.subscription.unsubscribe();};
+ },
 };
 export async function eligibleUser() {
   const api=configured();
@@ -300,6 +346,7 @@ export function clearEnrollmentReferral(){
  if(typeof window!=='undefined')try{window.sessionStorage.removeItem(ENROLLMENT_REFERRAL_KEY);}catch{}
 }
 export async function requestAccountSignup(email:string,password:string,confirmation:string,displayName:string){
+ requireNativePkce();
  const address=email.trim().toLowerCase();
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)||address.length>254)throw Error('Enter a valid email address.');
  if(password.length<6||password.length>128||!/[A-Za-z]/.test(password)||!/[0-9]/.test(password))throw Error('Use 6–128 characters, including a letter and a number.');
@@ -307,11 +354,11 @@ export async function requestAccountSignup(email:string,password:string,confirma
  if(displayName.trim().length>80)throw Error('Use a display name of 80 characters or fewer.');
  if(!await readEnrollmentAvailability())throw Error('New account enrollment is not open yet.');
  const {error}=await configured().auth.signUp({email:address,password,options:{
-  emailRedirectTo:(()=>{const target=new URL('https://app.ezpepplanner.com/#membership');const referral=pendingEnrollmentReferral();if(referral)target.searchParams.set('ref',referral);return target.href;})(),
+  emailRedirectTo:(()=>{if(Platform.OS!=='web')return NATIVE_AUTH_REDIRECT;const target=new URL('https://app.ezpepplanner.com/#membership');const referral=pendingEnrollmentReferral();if(referral)target.searchParams.set('ref',referral);return target.href;})(),
   data:{display_name:displayName.trim()}
  }});
  if(error)throw Error('Account creation could not be confirmed. Try again later or sign in if you already have an account.');
- return 'Open the confirmation link in your email to continue. If it opens in another browser, sign in normally with your email and password. No code entry or payment is required.';
+ return 'Open the confirmation link in your email on this device to continue. If it opens elsewhere, return here and sign in with your email and password. No code entry or payment is required.';
 }
 
 /** Prepared enrollment transport; server gate stays authoritative and closed until installed. */

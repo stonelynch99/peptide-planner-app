@@ -31,7 +31,7 @@ export async function enableReminders(){
  return (await Notifications.requestPermissionsAsync()).granted;
  }catch{return false;}
 }
-type DesiredReminder={planId:string;eventId:string;compoundName:string;at:number;urgent:boolean;cycleResume?:boolean};
+type DesiredReminder={planId:string;eventId:string;compoundName:string;at:number;urgent:boolean;cycleResume?:boolean;pauseReview?:boolean};
 function cycleRestartReminder(plan:SavedPlan,now:number):DesiredReminder|null{
  const onDays=Number(plan.cycleOnWeeks||0)*7,offDays=Number(plan.cycleOffWeeks||0)*7,cycleDays=onDays+offDays;
  if(!onDays||!offDays||!cycleDays)return null;
@@ -68,14 +68,16 @@ export function reconcileReminders(input:SavedPlan|SavedPlan[]|null):Promise<Rem
    ];
   })).filter(e=>e.at>now).sort((a,b)=>a.at-b.at).slice(0,60):[];
   const restartReminders=permission.granted?enabledPlans.map(plan=>cycleRestartReminder(plan,now)).filter((item):item is DesiredReminder=>!!item):[];
-  const allDesired=[...upcoming,...restartReminders];
+  const pauseReviews:DesiredReminder[]=permission.granted?plans.filter(p=>p.pausedAt&&p.pauseReviewAt&&p.pauseReminderEnabled!==false&&Date.parse(p.pauseReviewAt)>now).map(p=>({planId:p.id,eventId:'pause-review:'+p.pauseReviewAt,compoundName:p.compoundName,at:Date.parse(p.pauseReviewAt!),urgent:false,pauseReview:true})):[];
+  const reviews=[...pauseReviews,...restartReminders].sort((a,b)=>a.at-b.at).slice(0,60);
+  const allDesired=[...upcoming.slice(0,60-reviews.length),...reviews].sort((a,b)=>a.at-b.at);
   const desired=new Map(allDesired.map(item=>['pep04:'+item.planId+':'+item.eventId+':'+item.at,item]));
   const existing=await Notifications.getAllScheduledNotificationsAsync();
   for(const item of existing)if(item.content.data?.owner===owner&&!item.content.data?.test&&!desired.has(item.identifier))await Notifications.cancelScheduledNotificationAsync(item.identifier);
   const existingIds=new Set(existing.map(item=>item.identifier));
-  for(const [id,item]of desired)if(!existingIds.has(id))await Notifications.scheduleNotificationAsync({identifier:id,content:{title:item.cycleResume?'Cycle resumes · '+item.compoundName:item.urgent?'Action needed · '+item.compoundName:'Time for '+item.compoundName,body:item.cycleResume?'Your saved break is complete. Open EZPep Planner to review the resumed schedule.':item.urgent?'This event is still waiting. Open EZPep Planner to mark Taken, Skip or Remind Later.':'Open EZPep Planner to review the amount and mark Taken, Skip or Remind Later.',sound:'default',data:{owner,eventId:item.eventId,planId:item.planId,urgent:item.urgent,cycleResume:item.cycleResume}},trigger:{type:Notifications.SchedulableTriggerInputTypes.DATE,date:new Date(item.at),channelId}});
+  for(const [id,item]of desired)if(!existingIds.has(id))await Notifications.scheduleNotificationAsync({identifier:id,content:{title:item.pauseReview?'Pause review · '+item.compoundName:item.cycleResume?'Cycle resumes · '+item.compoundName:item.urgent?'Action needed · '+item.compoundName:'Time for '+item.compoundName,body:item.pauseReview?'Your pause is up. Open My Peptides to reactivate or archive. Your plan is still paused.':item.cycleResume?'Your saved break is complete. Open EZPep Planner to review the resumed schedule.':item.urgent?'This event is still waiting. Open EZPep Planner to mark Taken, Skip or Remind Later.':'Open EZPep Planner to review the amount and mark Taken, Skip or Remind Later.',sound:'default',data:{owner,eventId:item.eventId,planId:item.planId,urgent:item.urgent,cycleResume:item.cycleResume,pauseReview:item.pauseReview}},trigger:{type:Notifications.SchedulableTriggerInputTypes.DATE,date:new Date(item.at),channelId}});
   const through=upcoming.length?new Date(upcoming[upcoming.length-1].at).toISOString():undefined;
-  return {message:!enabledPlans.length?'Reminders are off.':!permission.granted?'Notifications are not permitted. Enable them to receive reminders.':allDesired.length+' reminder alerts prepared, including unresolved follow-ups and cycle resumptions. Android controls exact delivery timing.',count:allDesired.length,through,enabled:!!permission.granted};
+  return {message:!enabledPlans.length&&!pauseReviews.length?'Reminders are off.':!permission.granted?'Notifications are not permitted. Enable them to receive reminders.':allDesired.length+' reminder alerts prepared, including unresolved follow-ups and cycle resumptions. Android controls exact delivery timing.',count:allDesired.length,through,enabled:!!permission.granted};
  }).catch(()=>({...unavailable(),message:'Local reminders could not be prepared. Your saved plan is unchanged. Check notification permissions or retry in a development build.'}));serial=task.then(()=>{});return task;
 }
 export async function testReminder(){const Notifications=getLocalNotifications();if(!Notifications)throw Error(unavailableMessage);if(!await enableReminders())throw Error('Notification permission is not enabled.');await Notifications.scheduleNotificationAsync({content:{title:'EZPep Planner test',body:'Local notifications are working.',data:{owner,test:true}},trigger:{type:Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,seconds:10,channelId}});}

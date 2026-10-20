@@ -1,3 +1,86 @@
+# Native phone build checkpoint — 2026-10-19 Vancouver
+Prepared source only; no APK, commit, push or publication. Existing Expo project full-force-studios/ezpep-planner, /app base and restricted GitHub installation must be reused.
+
+Completed in Cloud: timed Pause (4/6/custom weeks, explicit review/reactivate/archive) and native auth restoration/callback repairs. Native auth uses exact ezpepplanner://auth/callback, persisted AsyncStorage session, SDK PKCE exchange + server user check, duplicate suppression, SDK-only recovery authority, foreground refresh/process lock and native recovery form. Existing web origin/root guards and membership admission remain enforced. app.json declares ezpepplanner scheme.
+
+Before native promotion/build:
+1. Inspect latest HANDOFF/REVIEW and fresh workspace hashes. Preserve all existing prepared files and three protected shared pending files.
+2. Establish secure native crypto initialization before SDK/backup use. Existing code requires crypto.getRandomValues, crypto.randomUUID and standards-compliant crypto.subtle.digest for SHA-256. Native signup/recovery now fail closed before provider calls when random values or digest support is absent; Hermes capability is not established by a web export. Use Expo-supported native crypto/package installer if needed, generated lockfile and actual runtime checks. Never use Math.random for PKCE or primary-device proof. Do not claim this is installed from these notes.
+3. Supabase URL Configuration was independently read in the authenticated dashboard. Current site URL remains https://app.ezpepplanner.com and only three existing web redirect entries are present. Native exact redirect ezpepplanner://auth/callback is NOT registered. Add only that exact entry through approved provider controls when authorized; preserve existing URLs, email verification, password requirements and all activation settings. No wildcard or implicit bearer-token callback.
+4. Use reviewed native source promotion/build path. Current Cloud Builder catalog has no native branch/EAS signing/build control. Do not substitute web publication, blindly commit pending files or build the older connected GitHub source.
+5. Run actual Android export, then EAS internal preview APK from the exact reviewed source and existing company project. Preserve/create owner-controlled signing securely; no store submission or customer charges. Verify package/version/source hashes, downloaded APK identity, manifest scheme and notification permission/channel.
+6. Keep the existing phone web/PWA installation and data. Native storage is separate: verify a current phone backup, sign in to native, explicitly review/restore that backup and primary-device transfer, then compare plans/history/inventory. Empty native storage must never overwrite a populated cloud snapshot.
+7. Pixel acceptance: cold/warm sign-in, restart persistence, valid/expired/mismatched callback, reset password, foreground refresh, offline save/reopen, background/locked notification, Pause review, resume finite/ongoing plans, archive cancellation and cloud backup recovery.
+
+D&B case34943548/address correction and Apple enrollment remain pending. Store billing not implemented by this checkpoint. No native paid conversion, store approval, phone installation or OS delivery claim.
+
+# Native store release direction — 2026-10-19
+This checkpoint supersedes the earlier web-first public launch work order. The owner requested Android and iOS store apps, store-managed subscriptions, simpler native notifications and store-delivered updates. Preserve current web users, beta access, accounts and data. Do not disable existing billing or migrate/cancel a subscription without a separate reviewed migration. This is preparation, not a store-approved release.
+
+## Confirmed baseline
+- Current live/source baseline: 0eb7a285c2faba61dd995f77a47a3364e21f5664.
+- Existing React Native 0.86.3 / Expo ~57.0.29 code can be reused; Android package com.ezpep.planner exists.
+- app/app.json has no iOS bundle identifier; app/package.json has no store-purchase dependency.
+- Existing native local reminder implementation exists, but the app previously rendered the browser reminder panel on every platform.
+- Existing production acceptance covers web builds, not signed Android/iOS binaries. No native build or store account is verified.
+- Owner confirmed neither Apple Developer nor Google Play Console account exists.
+- The available Cloud Builder catalog has web/TypeScript/Expo-export checks, but no native signing/build/submission capability. A supported build service must be connected; no browser credential extraction.
+- Privacy SQL ceab477a…3198d remains uninstalled. Native packaging does not resolve export, consent, deletion or retention gaps.
+
+## Approval feasibility before submission
+Apple App Review 1.4.2 restricts drug dosage calculators to specified approved entities or relevant regulatory approval. EZPep currently computes dose/concentration/syringe quantities. Applicability is a material review risk, not a determination of rejection or approval. Obtain review guidance and assess exact functionality; a disclaimer or relabeling is not an eligibility substitute. Do not hide existing features during review and re-enable them afterward.
+Google Health Content and Services prohibits harmful health functionality and promotion/sale of unapproved substances. Review Learn guidance, research reference transfer, vendor/product links and claims against the actual policy. Do not assume educational wording establishes compliance.
+Neither platform's approval or review timing is guaranteed.
+
+## Organization enrollment preparation
+Legal entity: Full Force Enterprises Inc.
+Business address supplied by owner: Unit 9, 45905 Yale Road, Chilliwack, BC V2P 2M6, Canada. Verify it matches the corporate/D-U-N-S record.
+App name: EZPep Planner.
+Website: https://ezpepplanner.com/
+Support/privacy contact: login@ezpepplanner.com
+Existing Android identifier: com.ezpep.planner. Proposed matching iOS identifier is unregistered and must be checked before reservation.
+Missing: corporate D-U-N-S lookup/verification, enrollment contact phone, account-owner identity/2FA, company documents as requested by provider, banking/tax agreements, app identifier reservation.
+Apple organization enrollment needs a legal entity, authority to bind it, D-U-N-S and functioning associated website/domain email. Organization seller name is its legal name. Use the owner's real legal identity privately for enrollment, not the Stone Lynch display alias.
+Google organization enrollment likewise requires D-U-N-S; its guidance specifically calls out health apps.
+Owner must complete secure identity verification, legal agreements and enrollment payment. No fees paid or enrollment submitted by this preparation.
+Apple lists USD99/year, localized at enrollment; Google lists USD25 once. Check actual currency/tax before purchase.
+
+## Native work packages
+1. Android development build and physical Pixel acceptance first; iOS build and physical iPhone acceptance in parallel with enrollment. Preserve one shared codebase with platform adapters; do not create a disconnected account/data project.
+2. Platform UI: native Notifications panel uses native permission, local test and OS settings. No browser subscriptions or reminder outbox recovery controls. Native App updates explains store delivery; retain the web updater only on web. Preparation alone is not permission/delivery acceptance.
+3. Native portability audit: remove/guard browser-only session, upload, download, file chooser, DOM/URL, clipboard and cloud identity paths from native startup. Test account creation/verification/recovery deep links and keyboard/navigation on actual devices.
+4. Offline/local-first planner persistence; versioned upgrade migrations; validated recovery; safe web-to-native import/transfer that does not overwrite a populated phone with an empty/stale cloud copy. A browser uninstall does not preserve all data; verify owner exports before any further transfer.
+5. Notifications: actual native build, permissions denied/granted/revoked, background/locked device, restart/reboot, timezone/DST, early-completion cancellation, snooze/follow-up, OS scheduling limits and Android battery/exact-alarm behavior. Store installation does not override OS permission or timing limits. Decide local versus remote notification design from actual tests.
+6. Store billing: Google Play Billing and Apple StoreKit through a compatible native bridge; server verification and authenticated account binding; sandbox/production isolation; lifecycle renewal/expiry/refund/revocation/grace periods; restore purchases; manage subscription; prevent duplicate subscription prompts. No entitlement from a client flag or checkout-return URL.
+7. Preserve permanent beta Pro and verified legacy access. Model source (Google/Apple/legacy Stripe/beta/reward) separately from tier. Do not charge or auto-convert existing members. Store price target remains the approved CAD7.99 monthly intent, subject to store price points/tax/fees and owner review. Store subscription product identifiers remain uncreated.
+8. Privacy and health declarations: accurate data inventory and SDK audit, App Privacy/Data safety forms, in-app account deletion and tested processing, consent withdrawal/export/retention/provider disclosure. Existing request-only deletion is not proof this requirement is met.
+9. TestFlight and Play internal testing; sandbox subscriptions and real-device reminders; accessibility, account/data migration, backup/restore, launch reliability. Store listing screenshots must come from final native builds.
+10. Submission package: icons/splash, descriptions, categorization/age/content rating, privacy/support URLs, reviewer credentials/test account, review notes explaining actual calculations and content, subscription terms and cancellation/restore flows. No unverified compliance attestations or false medical status.
+Timed Pause remains requested; include durable pause/review-date semantics and native review reminders after core native notification reliability.
+
+## Metadata draft — not submitted
+Name: EZPep Planner
+Short description draft: Organize your plans, reminders, inventory and history.
+Developer/seller legal entity: Full Force Enterprises Inc.
+Support URL draft: https://ezpepplanner.com/ (confirm a dedicated usable support route).
+Privacy URL: not finalized; existing disclosure needs the audited gaps resolved.
+Full description, category, age rating, Health declaration and calculation review notes: blocked on the truthful final native feature scope; do not submit placeholders or generic wellness claims that misdescribe peptide functionality.
+Commercial subscription and data-safety forms: blocked on actual store products and final SDK/data inventory.
+
+## Verified official references (checked 2026-10-19)
+- https://developer.apple.com/app-store/review/guidelines/ — 1.4.2 and in-app purchase/privacy review.
+- https://developer.apple.com/programs/enroll/ — organization enrollment and fee.
+- https://support.google.com/googleplay/android-developer/answer/13634885?hl=en — organization/D-U-N-S.
+- https://support.google.com/googleplay/android-developer/answer/6112435/ — registration.
+- https://support.google.com/googleplay/android-developer/answer/16679511?hl=en — health/medical/unapproved substances policy.
+- https://developer.apple.com/support/offering-account-deletion-in-your-app/
+- https://docs.expo.dev/guides/in-app-purchases/
+- https://docs.expo.dev/push-notifications/what-you-need-to-know/
+- https://developer.android.com/google/play/billing/backend
+- https://developer.apple.com/documentation/AppStoreServerNotifications/receiving-app-store-server-notifications
+
+---
+
 # Course navigation milestone — October 5, 2026 UTC
 Implemented for validation: Learn → Courses opens a catalog with overall progress, Quick Start and three course cards. Opening a course replaces that catalog with only its own lessons and progress. Back to courses returns to the catalog without saving or resetting progress; All lessons stays within the selected course. Changing course or lesson returns the Learn scroll view to the top. Existing account-scoped device progress, save-failure recovery and stale-account/navigation guards remain unchanged. The content remains fifteen introductory readings, not an expanded curriculum or cross-device progress service.
 

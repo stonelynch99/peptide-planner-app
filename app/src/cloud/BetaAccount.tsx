@@ -4,7 +4,7 @@ import React,{useEffect,useMemo,useState} from 'react';
 import {AppState,Image,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View,Linking,Platform,Share,useWindowDimensions} from 'react-native';
 import {EZPEP_LOCKUP_DATA_URI} from '../brand-assets';
 import {AuthController} from './auth-controller';
-import {acknowledgeCloudConsent,readReferralSummary,authPort,cloudConfig,readBetaAdminDashboard,type BetaAdminUser} from './client';
+import {accountLinkMessage,acknowledgeCloudConsent,readReferralSummary,authPort,cloudConfig,readBetaAdminDashboard,type BetaAdminUser} from './client';
 import {WEBSITE_ACCOUNT_URL,PLANNER_SHARE_URL,type ReferralSummary,type AccountState} from './contracts';
 
 export function ReferralsRewardsPanel({userId}:{userId:string}){
@@ -49,6 +49,7 @@ export function BetaAccountPanel({account}:{account:ReturnType<typeof useBetaAcc
  const passwordAction=async(action:()=>Promise<string>)=>{if(busy)return;setBusy(true);setPasswordMessage('');try{setPasswordMessage(await action());}catch{setPasswordMessage('This step could not finish. Please try again.');}finally{setBusy(false);}};
  const button=(label:string,action:()=>void,disabled=false)=><Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled:disabled||busy}} disabled={disabled||busy} onPress={action} style={[s.button,['Save display name','Save account consent','Sign out','Forgot password?'].includes(label)&&s.secondaryButton,(disabled||busy)&&{opacity:.5}]}><Text style={[s.buttonText,['Save display name','Save account consent','Sign out','Forgot password?'].includes(label)&&s.secondaryText]}>{label}</Text></Pressable>;
  return <View style={[s.card,compact&&s.cardCompact]}>
+ {!!accountLinkMessage()&&<Text accessibilityRole="alert" style={s.caption}>{accountLinkMessage()}</Text>}
  <View style={s.accountHeader}><Image source={{uri:EZPEP_LOCKUP_DATA_URI}} accessibilityLabel="EZPep Planner" resizeMode="contain" style={s.accountLogo}/><Pressable accessibilityRole="link" accessibilityLabel="Visit EZPep website" onPress={()=>void Linking.openURL('https://ezpepplanner.com/')} style={s.websiteLink}><Text style={s.websiteLinkText}>Website ↗</Text></Pressable></View>
  <View style={s.accountHero}><Text style={s.accountKicker}>{state.status==='eligible'?'YOUR ACCOUNT':'WELCOME TO EZPEP'}</Text><Text accessibilityRole="header" style={[s.title,compact&&s.titleCompact]}>{state.status==='eligible'?'A home for your account.':state.status==='signedOut'?(entryMode==='create'?'Start with a Free account.':'Sign in to your account.'):'Your EZPep account.'}</Text><Text style={s.heroText}>{state.status==='eligible'?'Manage your profile, security and account preferences in one place.':state.status==='signedOut'?(entryMode==='create'?'New here? Create your account below. You can upgrade to Pro later.':'Already registered? Use your email and password below.'):'Verify your account to continue.'}</Text></View>
  {state.status!=='signedOut'&&<Text style={s.reassurance}>Your saved plans stay on this device while we check account access.</Text>}

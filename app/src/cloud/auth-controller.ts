@@ -42,7 +42,7 @@ export class AuthController {
   async recover(email: string) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || email.length>254) return 'Enter a valid email address.';
     try { await this.port.requestRecovery!(email.trim().toLowerCase()); } catch { /* Same response for all addresses, including throttled requests. */ }
-    return 'If this address has an account, a secure recovery email will arrive. Open it in this same browser. Wait 60 seconds before requesting another.';
+    return 'If this address has an account, a secure recovery email will arrive. Open it in the same app or browser where you requested it. Wait 60 seconds before requesting another.';
   }
   async savePassword(password: string, confirmation: string) {
     if(password.length<6 || password.length>128 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password))return 'Use 6–128 characters, including at least one letter and one number.';
