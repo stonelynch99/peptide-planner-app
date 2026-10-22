@@ -13,6 +13,13 @@
       "android": {
         "buildType": "app-bundle"
       }
+    },
+    "store-preview": {
+      "distribution": "store",
+      "environment": "preview",
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   }
 }
